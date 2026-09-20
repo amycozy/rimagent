@@ -11,8 +11,17 @@ bridge:
   url: http://127.0.0.1:8765
 play:
   speed: 3                 # play speed between steps: 1 normal, 2 fast, 3 superfast
-  think_speed: 3           # speed while thinking on calm steps (0 = pause, 1 normal, 2 fast, 3 superfast)
-  danger_think_speed: 1    # speed while thinking on urgent steps (hostiles, downed/dead colonist, mental break, dialog, watcher/critical alerts); 0 = pause. Default is never-pause (1x); the dashboard toggle can still force a pause per-episode.
+  think_speed: 1           # speed while thinking on calm steps (0 = pause, 1 normal, 2 fast, 3 superfast).
+                           # Was 3. At superfast the colony moved 2-3 in-game HOURS per 149s think step, so the
+                           # model reacted to a world that had already moved on; episode 1 lost a whole raid that
+                           # way. The long gaps between steps are the model's own sleep plan and still run at
+                           # `speed` above, so this costs far less pace than it looks.
+  danger_think_speed: 0    # speed while thinking on urgent steps (hostiles, downed/dead colonist, mental break,
+                           # dialog, watcher/critical alerts); 0 = pause. Was 1. When something hostile is
+                           # happening the clock stops while the model thinks, so its decision is about the
+                           # situation it was shown. The dashboard toggle can still override per-episode.
+  critical_events:         # sub-kinds of kind "orders" that may INTERRUPT a think step (see runner.is_critical)
+    - combat_engaged       # shots being fired now; the rest of the order events stay ordinary wakes
   first_improve_day: 1     # first mid-episode improvement pass (skills/tools/watchers) this many days into a game
   improve_every_days: 3    # and then every N days
   wake_hours: 12           # scheduled think interval (in-game hours) when the model doesn't say
