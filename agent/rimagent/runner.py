@@ -156,6 +156,8 @@ class Runner:
         self.controls = Controls(self)
         self.stop = False
         self.force_think: str | None = None
+        self.wake_event: dict[str, Any] | None = None   # the ledger event this wake came from, if it came from one
+        self.urgent_step = False                        # the running step is urgent, including by promotion mid-step
         self.force_end: str | None = None
         self.operator_inbox: list[str] = []
         self.ctx.extra["operator_inbox"] = self.operator_inbox  # shared with the loop so messages land mid-step
@@ -406,14 +408,11 @@ class Runner:
         alerts = run_watchers(self.ctx, evs)
         urgent += [f"watcher {a.get('watcher')}: {a.get('text')}" for a in alerts if a.get("wake")]
         if urgent:
-            try:
-                self.bridge.call("game.pause", paused=True)
-                self.ctx.extra["model_speed"] = None  # runner restores play speed after the step unless the model sets one
-            except BridgeError:
-                pass
+            self.promote_to_urgent()
         return urgent
 
     def wake_trigger(self, tick: int, new_events: list[dict[str, Any]]) -> str | None:
+        self.wake_event = None
         if self.force_think:
             t, self.force_think = self.force_think, None
             return t
@@ -427,6 +426,7 @@ class Runner:
         for e in new_events:
             k = e.get("kind")
             if is_critical(e, self.critical_kinds, self.critical_events) or (k in kinds and not recently):
+                self.wake_event = e
                 return f"event: {k}: {e.get('text', '')}"
         alert = self.game_alert_trigger(tick)
         if alert:
@@ -463,10 +463,40 @@ class Runner:
         return trigger
 
     def is_urgent(self, trigger: str) -> bool:
-        t = trigger.lower()
-        if t.startswith(("watcher alert", "alert (critical)", "operator")):
-            return True
-        return any(k in t for k in self.critical_kinds)
+        """Whether this step runs at danger_think_speed.
+
+        Where a ledger event caused the wake, is_critical decides -- the same two-set test the interrupt path
+        uses. Substring-matching the rendered trigger instead was arbitrary in both directions: combat_engaged
+        is emitted under kind "orders" and no critical kind appears in its sentence, so the report that a fight
+        is happening did not stop the clock, while any letter whose title happened to contain "danger" did.
+        The prefixes below are the wakes that have no event behind them.
+        """
+        if self.wake_event is not None:
+            return is_critical(self.wake_event, self.critical_kinds, self.critical_events)
+        return trigger.lower().startswith(("watcher alert", "alert (critical)", "operator"))
+
+    def promote_to_urgent(self) -> None:
+        """Raise the running step to danger_think_speed, for an urgent event that arrived after it began.
+
+        Urgency was fixed at step start from the trigger, and the events that decide a colony arrive later.
+        Episode 1 day 11: a step began on "alert (High): Medical treatment needed" at think_speed 1, and 37
+        seconds in, colonist_downed and colonist_carried arrived -- the exact kinds danger_think_speed exists
+        for. They could not change a policy already set. 103 seconds of wall clock, 106 cells of map, one
+        colonist gone.
+        """
+        self.urgent_step = True
+        self.ctx.extra["urgent"] = True
+        danger = int(self.cfg["play"].get("danger_think_speed", 0))
+        self.ctx.extra["think_speed"] = danger
+        try:
+            if danger <= 0:
+                self.bridge.call("game.pause", paused=True)
+            else:
+                self.bridge.call("game.speed", speed=danger)
+                self.bridge.call("game.pause", paused=False)
+            self.ctx.extra["model_speed"] = None  # runner restores play speed after the step unless the model sets one
+        except BridgeError:
+            pass
 
     def with_pause(self, fn, urgent: bool = False) -> None:
         # Calm steps think at think_speed (default: full play speed); urgent ones at danger_think_speed (default: paused).
@@ -498,7 +528,7 @@ class Runner:
             self.bus.emit("status", {"phase": "playing", "model_speed": chosen})
 
     def play_step(self, trigger: str, tick: int) -> None:
-        urgent = self.is_urgent(trigger)
+        urgent = self.urgent_step = self.is_urgent(trigger)
         self.ctx.extra["tick"] = tick
         events, self.pending_events = self.pending_events, []
         alerts, self.pending_alerts = self.pending_alerts, []
@@ -514,7 +544,7 @@ class Runner:
         self.step_notes.append(res.notes)
         play = self.cfg["play"]
         hours = self.ctx.wake.in_hours if self.ctx.wake.in_hours else float(play.get("wake_hours", 8))
-        floor = 0.5 if (urgent or self.ctx.extra.get("model_speed") is not None) else float(play.get("min_wake_hours", 3))
+        floor = 0.5 if (self.urgent_step or self.ctx.extra.get("model_speed") is not None) else float(play.get("min_wake_hours", 3))
         hours = max(floor, min(48.0, float(hours)))
         try:
             tick = int(self.bridge.status().get("tick", tick))
@@ -674,6 +704,7 @@ class Runner:
     def play_step_parallel(self, trigger: str, tick: int) -> None:
         """Fan a calm step out to the four specialist streams; merge notes and wake plans."""
         from . import roles as roles_mod
+        self.urgent_step = False   # only calm steps come here; the guard stream may still promote this one
         self.ctx.extra["tick"] = tick
         events, self.pending_events = self.pending_events, []
         alerts, self.pending_alerts = self.pending_alerts, []
