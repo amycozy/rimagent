@@ -250,7 +250,7 @@ namespace RimBridge.Steward.Stock
             foreach (var p in OwnedAnimals)
             {
                 if (!p.Spawned || p.Map != Map) continue;
-                if (RestrictArea != null && p.playerSettings != null && p.playerSettings.AreaRestrictionInPawnCurrentMap != RestrictArea)
+                if (RestrictArea != null && p.playerSettings != null && p.playerSettings.AreaRestrictionInPawnCurrentMap != RestrictArea && !Orders.Order_Pets.Holds(p))
                     data.AreaTargets.Add(p);
                 if (Train.Count > 0 && p.training != null)
                     foreach (var td in Train)

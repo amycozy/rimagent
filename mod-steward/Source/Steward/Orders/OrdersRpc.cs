@@ -65,14 +65,14 @@ namespace RimBridge.Steward.Orders
 
         public static JArray ActiveIds() => new JArray(StandingOrders.All.Where(o => o.Enabled).Select(o => o.Id));
 
-        [Rpc("steward.orders", "standing orders (deterministic reflexes in the mod): [{id: combat|rescue|fire|unforbid|corpses|beds|policies|blueprints, label, enabled, interval_ticks, last_run_hours_ago, summary, acting_on: int}]")]
+        [Rpc("steward.orders", "standing orders (deterministic reflexes in the mod): [{id: combat|rescue|fire|unforbid|corpses|beds|policies|blueprints|pets, label, enabled, interval_ticks, last_run_hours_ago, summary, acting_on: int}]")]
         public static JToken List(JObject p)
         {
             Map();
             return new JArray(StandingOrders.All.Select(Row));
         }
 
-        [Rpc("steward.orders.set", "{id: order id|all, enabled: bool} switch a standing order on/off (persisted per game) -> row, or [rows] for all; switching combat off while it is engaged releases first (row.released: {undrafted, restored, left})")]
+        [Rpc("steward.orders.set", "{id: order id|all, enabled: bool} switch a standing order on/off (persisted per game) -> row, or [rows] for all; switching combat off while it is engaged releases first (row.released: {undrafted, restored, left}); switching pets off during a threat restores the animals' areas first (row.restored: int)")]
         public static JToken Set(JObject p)
         {
             Map();
@@ -83,23 +83,41 @@ namespace RimBridge.Steward.Orders
             if (string.Equals(id, "all", StringComparison.OrdinalIgnoreCase))
             {
                 JObject? released = null;
+                int? petsRestored = null;
                 // combat first so its release still runs the (still enabled) rescue pass
                 foreach (var o in StandingOrders.All.OrderBy(o => o is Order_Combat ? 0 : 1))
                 {
                     if (!enabled && o is Order_Combat c && c.Enabled) released = ReleaseAll(c);
+                    if (!enabled && o is Order_Pets pt && pt.Enabled) petsRestored = RestorePets(pt);
                     StandingOrders.SetEnabled(o, enabled);
                 }
                 var rows = new JArray(StandingOrders.All.Select(Row));
-                if (released != null) foreach (var r in rows.OfType<JObject>()) if ((string?)r["id"] == "combat") r["released"] = released;
+                foreach (var r in rows.OfType<JObject>())
+                {
+                    if (released != null && (string?)r["id"] == "combat") r["released"] = released;
+                    if (petsRestored != null && (string?)r["id"] == "pets") r["restored"] = petsRestored;
+                }
                 return rows;
             }
             var order = Resolve(p);
             JObject? rel = null;
             if (!enabled && order is Order_Combat combat && combat.Enabled) rel = ReleaseAll(combat);
+            int? restored = !enabled && order is Order_Pets petsOrder && petsOrder.Enabled ? RestorePets(petsOrder) : null;
             StandingOrders.SetEnabled(order, enabled);
             var row = Row(order);
             if (rel != null) row["released"] = rel;
+            if (restored != null) row["restored"] = restored;
             return row;
+        }
+
+        /// <summary>Restores the animals the pets order holds on every map; null when it holds none anywhere.</summary>
+        static int? RestorePets(Order_Pets pets)
+        {
+            if (Find.Maps == null) return null;
+            int? total = null;
+            foreach (var map in Find.Maps.ToList())
+                if (pets.ReleaseNow(map) is int n) total = (total ?? 0) + n;
+            return total;
         }
 
         /// <summary>Releases every map the combat order is engaged on; null when it was engaged nowhere.</summary>
