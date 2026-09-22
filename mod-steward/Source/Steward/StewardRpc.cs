@@ -65,7 +65,7 @@ namespace RimBridge.Steward
 
         // ───────────────────────────── status ─────────────────────────────
 
-        [Rpc("steward.status", "steward overview: {enabled: {scorer, stock}, posture: null|{label, expires_in_hours, work, weights, targets}, pawns: [{id, name, managed, priorities: {WorkTypeDef: 1-4}, top: [{work, priority, why}]}], stock: [{id, kind, label, target, current, enabled, suspended, managed, last_run_hours_ago, designations (created by the job), adopted? (external designations counted toward the target, never removed by the job), failures, summary, notes}], problems: [string], orders: [{id, enabled, summary, acting_on}] (standing orders, see steward.orders), rally: [x,z,w,h]|null}")]
+        [Rpc("steward.status", "steward overview: {enabled: {scorer, stock}, posture: null|{label, expires_in_hours, work, weights, targets, work_disabled?}, pawns: [{id, name, managed, priorities: {WorkTypeDef: 1-4}, top: [{work, priority, why}]}], stock: [{id, kind, label, target, current, enabled, suspended, managed, last_run_hours_ago, designations (created by the job), adopted? (external designations counted toward the target, never removed by the job), failures, summary, notes}], problems: [string], orders: [{id, enabled, summary, acting_on}] (standing orders, see steward.orders), rally: [x,z,w,h]|null}")]
         public static JToken Status(JObject p)
         {
             var map = Map();
@@ -407,7 +407,7 @@ namespace RimBridge.Steward
 
         // ───────────────────────────── posture ─────────────────────────────
 
-        [Rpc("steward.posture", "{preset?: defend|build|harvest|recover|normal, label?: string (a label equal to a preset name seeds that preset; use another word for a custom posture), hours?: float (default 12), work?: {WorkTypeDef: -1..1 delta ADDED to every managed pawn's 0..1 score: +0.5 = about two priority steps up, -1 = off for everyone; values outside -1..1 are clamped}, weights?: {ConsiderX: multiplier >= 0 on that scorer weight}, targets?: {stock kind: multiplier >= 0 on the job's target count: 1.5 = +50%, 0 = target 0 so the job releases its own designations and idles}, clear?: bool ends the posture} time-boxed colony-wide bias; explicit dicts override preset entries; a new call replaces the old posture -> posture or null")]
+        [Rpc("steward.posture", "{preset?: defend|build|harvest|recover|normal, label?: string (a label equal to a preset name seeds that preset; use another word for a custom posture), hours?: float (default 12), work?: {WorkTypeDef: -1..1 delta ADDED to every managed pawn's 0..1 score: +0.5 = about two priority steps up, -1 = off for everyone; values outside -1..1 are clamped}, weights?: {ConsiderX: multiplier >= 0 on that scorer weight}, targets?: {stock kind: multiplier >= 0 on the job's target count: 1.5 = +50%, 0 = target 0 so the job releases its own designations and idles}, clear?: bool ends the posture} time-boxed colony-wide bias; explicit dicts override preset entries; a new call replaces the old posture -> posture or null. posture.work_disabled?: {WorkTypeDef: [managed colonist]} names the colonists with a raised work type disabled; the raise does not change their priority")]
         public static JToken Posture(JObject p)
         {
             if (P.Bool(p, "clear", false)) { StewardTuning.ClearPosture(); return JValue.CreateNull(); }
@@ -455,7 +455,7 @@ namespace RimBridge.Steward
         static JObject? PostureJson()
         {
             if (!StewardTuning.PostureActive()) return null;
-            return new JObject
+            var o = new JObject
             {
                 ["label"] = StewardTuning.PostureLabel,
                 ["expires_in_hours"] = Math.Round(StewardTuning.PostureExpiresInHours(), 1),
@@ -463,6 +463,20 @@ namespace RimBridge.Steward
                 ["weights"] = new JObject(StewardTuning.PostureWeightMultipliers.Select(kv => new JProperty(kv.Key, Math.Round(kv.Value, 3)))),
                 ["targets"] = new JObject(StewardTuning.PostureTargetMultipliers.Select(kv => new JProperty(CanonKind(kv.Key) is { } c ? KindOut(c) : kv.Key, Math.Round(kv.Value, 3)))),
             };
+            var disabled = WorkDisabled(Find.CurrentMap);
+            if (disabled.Count > 0) o["work_disabled"] = disabled;
+            return o;
+        }
+
+        /// <summary>Episode 3: a Warden +1.0 posture met a colony whose one colonist had Warden disabled, and the response did not say so.</summary>
+        static JObject WorkDisabled(Map? map)
+        {
+            var o = new JObject();
+            if (map == null) return o;
+            var reach = PostureReach.DisabledFor(StewardTuning.PostureWorkDeltas, map.mapPawns.FreeColonists.Where(ScorerGate.IsManaged),
+                x => x.LabelShort, (x, work) => DefDatabase<WorkTypeDef>.GetNamedSilentFail(work) is { } wt && x.WorkTypeIsDisabled(wt));
+            foreach (var kv in reach) o[kv.Key] = new JArray(kv.Value);
+            return o;
         }
 
         static float NumOf(JToken? t, string what)

@@ -59,5 +59,16 @@ namespace RimBridge.Tests
             Assert.False(StockStallRule.ShouldReport(5, 5));
             Assert.True(StockStallRule.ShouldReport(6, 5));
         }
+
+        [Fact]
+        public void PostureReach_NamesThePawnsARaiseCannotReach()
+        {
+            // Episode 3: posture Warden +1.0; the one colonist, Clawmont, had Warden disabled.
+            var deltas = new Dictionary<string, float> { ["Warden"] = 1f, ["Hauling"] = -0.5f, ["Cooking"] = 0.5f };
+            var disabled = new HashSet<string> { "Clawmont/Warden", "Clawmont/Hauling" };
+            var r = PostureReach.DisabledFor(deltas, new[] { "Clawmont", "Mira" }, n => n, (n, w) => disabled.Contains(n + "/" + w));
+            Assert.Equal(new[] { "Warden" }, r.Keys);
+            Assert.Equal(new[] { "Clawmont" }, r["Warden"]);
+        }
     }
 }
