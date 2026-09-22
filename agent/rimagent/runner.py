@@ -46,6 +46,21 @@ TICKS_PER_HOUR = 2500
 TICKS_PER_DAY = 60000
 
 
+def wake_floor(play: dict, urgent: bool, model_speed=None) -> float:
+    """The shortest wake the model is allowed to ask for.
+
+    On an urgent step the floor was a fixed 0.5, so the finest cadence the model could REQUEST during a raid was
+    half an in-game hour. A kidnapping is decided in in-game minutes: a raider carried a colonist off inside a sleep
+    the model chose, and the shortest wake available to it would still have been too long. min_wake_hours_urgent
+    makes it a setting; the default keeps 0.5.
+
+    This is a floor, not a schedule. Nothing wakes more often unless the model asks it to.
+    """
+    if urgent or model_speed is not None:
+        return float(play.get("min_wake_hours_urgent", 0.5))
+    return float(play.get("min_wake_hours", 3))
+
+
 class Controls:
     """What the dashboard can poke."""
 
@@ -489,7 +504,7 @@ class Runner:
         self.step_notes.append(res.notes)
         play = self.cfg["play"]
         hours = self.ctx.wake.in_hours if self.ctx.wake.in_hours else float(play.get("wake_hours", 8))
-        floor = 0.5 if (urgent or self.ctx.extra.get("model_speed") is not None) else float(play.get("min_wake_hours", 3))
+        floor = wake_floor(play, urgent, self.ctx.extra.get("model_speed"))
         hours = max(floor, min(48.0, float(hours)))
         try:
             tick = int(self.bridge.status().get("tick", tick))
