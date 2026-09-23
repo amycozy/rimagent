@@ -13,6 +13,8 @@ namespace RimBridge.Steward.Orders
     public sealed class OrderReport
     {
         public string Summary = "";
+        /// <summary>A condition that holds across passes (combat engaged or watching). steward.status reports it even when the pass acted on nothing.</summary>
+        public string? State;
         public int ActingOn;
         public List<string> Ids = new List<string>();
 
@@ -102,6 +104,7 @@ namespace RimBridge.Steward.Orders
             var g = StewardGame.Current;
             if (g == null) return;
             if (enabled == order.DefaultEnabled) g.orderEnabled.Remove(order.Id); else g.orderEnabled[order.Id] = enabled;
+            if (!enabled) g.orderState.Remove(order.Id);
         }
 
         // ── manual touch ──
@@ -174,6 +177,7 @@ namespace RimBridge.Steward.Orders
         public static int LastRunTick(Order order) => StewardGame.Current?.orderLastRun.TryGetValue(order.Id, out int t) == true ? t : -1;
         public static string? LastSummary(Order order) => StewardGame.Current?.orderSummary.TryGetValue(order.Id, out var s) == true ? s : null;
         public static int ActingOn(Order order) => StewardGame.Current?.orderActingOn.TryGetValue(order.Id, out int n) == true ? n : 0;
+        public static string? State(Order order) => StewardGame.Current?.orderState.TryGetValue(order.Id, out var s) == true ? s : null;
     }
 
     /// <summary>Ticks every enabled order on its own interval, staggered by Order.Offset.</summary>
@@ -265,6 +269,8 @@ namespace RimBridge.Steward
         public Dictionary<string, int> orderLastRun = new Dictionary<string, int>();
         public Dictionary<string, string> orderSummary = new Dictionary<string, string>();
         public Dictionary<string, int> orderActingOn = new Dictionary<string, int>();
+        // not saved: the next pass sets it again
+        public Dictionary<string, string> orderState = new Dictionary<string, string>();
         // manual-touch cooldowns
         public TouchTable touches = new TouchTable();
         // rally rect (w <= 0 = none), bound to one map
@@ -365,6 +371,7 @@ namespace RimBridge.Steward
             orderLastRun[id] = tick;
             orderSummary[id] = report.Summary ?? "";
             orderActingOn[id] = report.ActingOn;
+            if (string.IsNullOrEmpty(report.State)) orderState.Remove(id); else orderState[id] = report.State!;
         }
 
         private void ExposeOrdersData()

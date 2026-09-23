@@ -190,6 +190,7 @@ namespace RimBridge.Steward.Orders
                         new JObject { ["ticks"] = tick - st.engagedTick, ["hostiles"] = engaging.Count, ["drafted"] = st.drafted.Count, ["watching"] = watching.Count });
                 }
                 if (watching.Count > 0) report.Summary += "; " + WatchText(watching);
+                report.State = report.Summary;
                 return report;
             }
 
@@ -201,6 +202,7 @@ namespace RimBridge.Steward.Orders
                     int left = CombatTimers.ReleaseAfterHostileFreeTicks - (tick - st.lastHostileTick);
                     report.Summary = $"no engaged hostiles; releasing in {Math.Max(0, left)} ticks ({st.drafted.Count} drafted)";
                     if (watching.Count > 0) report.Summary += "; " + WatchText(watching);
+                    report.State = report.Summary;
                     return report;
                 }
                 Release(map, g, st, report, runRescue: true);
@@ -222,6 +224,7 @@ namespace RimBridge.Steward.Orders
                 st.mode = "watch";
                 foreach (var w in watching) report.Act(w.thing.ThingID);
                 report.Summary = WatchText(watching) + (pending.Length > 0 ? "; " + pending : "");
+                report.State = report.Summary;
                 return report;
             }
             st.mode = "idle";

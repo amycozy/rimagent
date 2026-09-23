@@ -201,6 +201,8 @@ def think(ctx: Context, user_message: str, situation_hint: str = "", *, max_call
 
 STEWARD_UNAVAILABLE = "steward: unavailable"
 _STEWARD_MAX_STOCK, _STEWARD_MAX_PROBLEMS, _STEWARD_MAX_PAWNS, _STEWARD_MAX_ORDER_LINES = 10, 5, 6, 8
+# A summary line is cut at 140 characters. A state line may be longer: the combat state names each hostile group.
+_STEWARD_SUMMARY_CHARS, _STEWARD_STATE_CHARS = 140, 300
 _STEWARD_TOOLS = "Director tools: rw_steward_stock_set (target/suspend/allow), rw_steward_posture (temporary bias with hours), rw_steward_pawn (managed=false takes a pawn manual), rw_steward_explain (why a priority), rw_steward_stock_run (run a job now), rw_steward_orders_set (toggle a standing order), rw_steward_orders_explain (what an order does, what it leaves alone)."
 # Standing orders (mod-side reflexes) in the canonical order the packet lists them; unknown ids from the mod are appended.
 ORDER_IDS = ("combat", "rescue", "unforbid", "corpses", "beds", "policies", "blueprints", "fire")
@@ -306,11 +308,14 @@ def steward_orders_lines(status: dict[str, Any], colonists: int | None = None, s
             if not on:
                 continue
             acted, suffix = order_acted_since_step(o, since_hours)
-            state = str(o.get("state") or "").strip()[:140]
+            state = str(o.get("state") or "").strip()[:_STEWARD_STATE_CHARS]
             if acted:
                 acting_now = (_num(o.get("acting_on")) or 0) > 0
-                summary = str((o.get("summary") if acting_now else o.get("last_acted_summary") or o.get("summary")) or "").strip()[:140] or "active"
-                acting.append(f"- {oid}: {summary}{suffix}" + (f"; {state}" if state and state != summary else ""))
+                full = str((o.get("summary") if acting_now else o.get("last_acted_summary") or o.get("summary")) or "").strip()
+                if state and full[:_STEWARD_STATE_CHARS] == state:
+                    acting.append(f"- {oid}: {state}{suffix}")
+                else:
+                    acting.append(f"- {oid}: {full[:_STEWARD_SUMMARY_CHARS] or 'active'}{suffix}" + (f"; {state}" if state else ""))
             elif state:
                 acting.append(f"- {oid}: {state}")
         lines.append("orders: " + " ".join(words))
