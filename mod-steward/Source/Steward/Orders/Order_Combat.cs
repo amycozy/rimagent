@@ -32,7 +32,8 @@ namespace RimBridge.Steward.Orders
             "mode (summary 'watching: …', nobody drafted, unforbid/corpses keep running). Engaged: every capable armed managed colonist is drafted " +
             "and sent to a distinct cell inside the rally rect (steward.orders.rally; cover-adjacent cells first; a 13x13 square around the base " +
             "centre when no rally is set; nowhere on a map without a base). Non-fighters are restricted to the Home area. Positions are re-issued " +
-            "every 250 ticks; pawns undrafted by a job are re-drafted. A fighter whose food or rest falls below 15% with no hostile within " +
+            "every 250 ticks; while holding, the summary reports how many drafted ranged colonists can hit the hostile nearest the rally from " +
+            "where they stand (report only, the order still holds). Pawns undrafted by a job are re-drafted. A fighter whose food or rest falls below 15% with no hostile within " +
             $"{CombatTimers.NearHostileRadius:0} cells is relieved (undrafted) and drafted again once both are above 50%; not while overrun. A hostile " +
             "inside the home area or within 5 cells of the rally centre switches every fighter to attack its nearest hostile. After 600 " +
             "hostile-free ticks the order undrafts what it drafted (not pawns under a live ui.draft/goto/attack/drafted order/draft gizmo " +
@@ -62,6 +63,7 @@ namespace RimBridge.Steward.Orders
             yield return "rally: distinct standable cells inside the rally rect, cover-adjacent cells first, spread apart; without a rally rect a 13x13 square around the base centre; on a map without Home area or colonist buildings pawns are drafted but not moved";
             yield return "non-fighters: restricted to the Home area (previous area remembered and restored on release unless the director changed it)";
             yield return "hold: every 250 ticks re-send wanderers and re-draft pawns a job undrafted; only pawns the order actually drafted are undrafted at release";
+            yield return "line of fire (report only): while holding the rally the summary counts the drafted ranged colonists that can hit the hostile nearest the rally from where they stand (Verb.CanHitTarget: range and line of sight), and why the others cannot (no line, out of range)";
             yield return "overrun: a hostile inside the home area or within 5 cells of the rally centre → every fighter attacks its nearest engaged hostile (melee weapon → melee, else ranged)";
             yield return "release: 600 hostile-free ticks → undraft what the order drafted (a pawn under a live ui.draft/goto/attack/drafted-order/draft-gizmo touch stays drafted and is retried each pass until the touch expires), restore areas, run rescue once; ledger combat_released names what was left to you";
             yield return $"prolonged: engaged longer than {CombatTimers.ProlongedTicks} ticks → one ledger combat_prolonged";
@@ -182,6 +184,7 @@ namespace RimBridge.Steward.Orders
                 {
                     foreach (var id in st.drafted) report.Act(id);
                     report.Summary = $"engaged: {engaging.Count} hostile(s), {st.drafted.Count} drafted ({st.lastMode}), {st.prevArea.Count} restricted to Home";
+                    if (st.lastMode == HoldingRally) report.Summary += LineOfFireSuffix(map, engaging, center);
                 }
                 if (!st.prolongedReported && CombatTimers.IsProlonged(st.engagedTick, tick))
                 {
@@ -348,7 +351,7 @@ namespace RimBridge.Steward.Orders
             }
             else
             {
-                st.lastMode = "holding rally";
+                st.lastMode = HoldingRally;
                 AssignCells(map, st, rect, center, fighters);
                 foreach (var p in fighters)
                 {
@@ -384,7 +387,42 @@ namespace RimBridge.Steward.Orders
             report.Summary = $"engaged: {hostiles.Count} hostile(s), {fighters.Count} fighting (+{drafted} drafted now), {mode}, {st.prevArea.Count} restricted to Home"
                 + (restricted > 0 ? $" (+{restricted})" : "")
                 + (relieved > 0 ? $"; relieved to eat/sleep: {string.Join(", ", relievedNames)}" : "")
-                + (st.relieved.Count > 0 && relieved == 0 ? $"; {st.relieved.Count} resting" : "");
+                + (st.relieved.Count > 0 && relieved == 0 ? $"; {st.relieved.Count} resting" : "")
+                + (st.lastMode == HoldingRally ? LineOfFireSuffix(map, hostiles, center) : "");
+        }
+
+        const string HoldingRally = "holding rally";
+
+        /// <summary>"; 0 of 2 ranged fighters can hit Shooter (8 cells, 2 no line)": Verb.CanHitTarget for every drafted ranged colonist, the check ui.attack reports as can_hit_from_here.</summary>
+        static string LineOfFireSuffix(Map map, List<Thing> hostiles, IntVec3 center)
+        {
+            var ranged = map.mapPawns.FreeColonistsSpawned
+                .Where(p => p.Drafted && !p.Downed && p.equipment?.Primary != null && !p.equipment.Primary.def.IsMeleeWeapon)
+                .ToList();
+            int nearest = -1;
+            float best = float.MaxValue;
+            for (int i = 0; i < hostiles.Count; i++)
+            {
+                float d = hostiles[i].Position.DistanceToSquared(center);
+                if (d < best) { best = d; nearest = i; }
+            }
+            var shots = new List<ShotFacts>();
+            for (int f = 0; f < ranged.Count; f++)
+                for (int h = 0; h < hostiles.Count; h++)
+                    shots.Add(new ShotFacts(f, h, ranged[f].Position.DistanceTo(hostiles[h].Position), Shot(ranged[f], hostiles[h])));
+            string text = LineOfFireRules.Text(ranged.Count, hostiles.Select(h => h.LabelShort).ToList(), nearest, shots);
+            return text.Length > 0 ? "; " + text : "";
+        }
+
+        static ShotBlock Shot(Pawn p, Thing target)
+        {
+            var verb = p.TryGetAttackVerb(target, false);
+            if (verb == null) return ShotBlock.Other;
+            if (verb.CanHitTarget(target)) return ShotBlock.None;
+            if (verb.ApparelPreventsShooting()) return ShotBlock.Apparel;
+            if (!verb.TryFindShootLineFromTo(p.Position, target, out _, ignoreRange: true)) return ShotBlock.NoLine;
+            if (!verb.TryFindShootLineFromTo(p.Position, target, out _)) return ShotBlock.OutOfRange;
+            return ShotBlock.Other;
         }
 
         static JArray RallyJson(CellRect r) => new JArray(r.minX, r.minZ, r.Width, r.Height);
