@@ -22,6 +22,7 @@ namespace RimBridge.Steward.Stock
         public RecipeDef? Recipe;
         private Building? _table;        // preferred table (may be null: any table that can do the recipe)
         private Bill_Production? _bill;  // the bill this job owns
+        private string? _addedBillId;    // unique load id of the bill this job added itself
 
         public StockJob_Production() { }
 
@@ -42,6 +43,7 @@ namespace RimBridge.Steward.Stock
 
         public Building? Table => _table;
         public Bill_Production? Bill => _bill;
+        public bool BillAddedByJob => _bill != null && _bill.GetUniqueLoadID() == _addedBillId;
         public void SetTable(Building? table) => _table = table;
 
         public IEnumerable<ThingDef> Products =>
@@ -100,6 +102,7 @@ namespace RimBridge.Steward.Stock
                 var giver = (IBillGiver)data.Table!;
                 if (giver.BillStack.Count >= BillStack.MaxCount) { Note($"{data.Table!.LabelCap} already has {BillStack.MaxCount} bills"); return false; }
                 giver.BillStack.AddBill(bill);
+                _addedBillId = bill.GetUniqueLoadID();
                 changed = true;
                 Note($"added bill {Recipe.label} on {data.Table!.LabelCap} (target {data.Target})");
             }
@@ -109,10 +112,18 @@ namespace RimBridge.Steward.Stock
                 catch (Exception ex) { StewardLog.Warning($"production: could not remove duplicate bill: {ex.Message}"); }
             }
             if (data.Duplicates.Count > 0) Note($"removed {data.Duplicates.Count} duplicate {Recipe.label} bills");
-            if (bill.repeatMode != BillRepeatModeDefOf.TargetCount) { bill.repeatMode = BillRepeatModeDefOf.TargetCount; changed = true; }
-            if (bill.targetCount != data.Target) { bill.targetCount = data.Target; changed = true; }
-            if (bill.suspended) { bill.suspended = false; changed = true; }
-            if (bill.pauseWhenSatisfied) { bill.pauseWhenSatisfied = false; changed = true; }
+            var reset = BillKeep.Changes(bill.repeatMode?.defName ?? "none", bill.targetCount, bill.suspended, bill.pauseWhenSatisfied, data.Target);
+            if (reset.Count > 0)
+            {
+                bill.repeatMode = BillRepeatModeDefOf.TargetCount;
+                bill.targetCount = data.Target;
+                bill.suspended = false;
+                bill.pauseWhenSatisfied = false;
+                changed = true;
+                string id = bill.GetUniqueLoadID();
+                if (id != _addedBillId)
+                    Note(BillKeep.ResetNote(id, (bill.billStack?.billGiver as Thing)?.ThingID ?? "?", reset));
+            }
             _bill = bill;
             _table = bill.billStack?.billGiver as Building ?? _table;
             if (!changed) LastRunSummary = $"bill ok ({Trigger.GetCurrentCount()} / {data.Target})";
@@ -134,6 +145,7 @@ namespace RimBridge.Steward.Stock
             Scribe_Defs.Look(ref Recipe, "recipe");
             Scribe_References.Look(ref _table, "table");
             Scribe_References.Look(ref _bill, "bill");
+            Scribe_Values.Look(ref _addedBillId, "addedBill");
             if (Scribe.mode == LoadSaveMode.PostLoadInit)
             {
                 if (Recipe != null && Trigger != null && Trigger.ThresholdFilter.AllowedDefCount == 0) ConfigureFilters();

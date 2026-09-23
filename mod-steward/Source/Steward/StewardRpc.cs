@@ -65,7 +65,7 @@ namespace RimBridge.Steward
 
         // ───────────────────────────── status ─────────────────────────────
 
-        [Rpc("steward.status", "steward overview: {enabled: {scorer, stock}, posture: null|{label, expires_in_hours, work, weights, targets}, pawns: [{id, name, managed, priorities: {WorkTypeDef: 1-4}, top: [{work, priority, why}]}], stock: [{id, kind, label, target, current, enabled, suspended, managed, last_run_hours_ago, designations (created by the job), adopted? (external designations counted toward the target, never removed by the job), failures, summary, notes}], problems: [string], orders: [{id, enabled, summary, acting_on}] (standing orders, see steward.orders), rally: [x,z,w,h]|null}")]
+        [Rpc("steward.status", "steward overview: {enabled: {scorer, stock}, posture: null|{label, expires_in_hours, work, weights, targets}, pawns: [{id, name, managed, priorities: {WorkTypeDef: 1-4}, top: [{work, priority, why}]}], stock: [{id, kind, label, target, current, enabled, suspended, managed, last_run_hours_ago, designations (created by the job), adopted? (external designations counted toward the target, never removed by the job), failures, summary, notes, bill? (production: the bill the job manages: {id, table, added_by_job, keeps: {field: value the job sets back on each run}, next_run_in_hours})}], problems: [string], orders: [{id, enabled, summary, acting_on}] (standing orders, see steward.orders), rally: [x,z,w,h]|null}")]
         public static JToken Status(JObject p)
         {
             var map = Map();
@@ -196,6 +196,7 @@ namespace RimBridge.Steward
                 ["summary"] = job.LastRunSummary != null ? (JToken)job.LastRunSummary : JValue.CreateNull(),
                 ["notes"] = new JArray(job.Notes.Reverse().Take(full ? 20 : 3)),
             };
+            if (job is StockJob_Production pr && pr.Bill != null) o["bill"] = ManagedBill(pr, tick);
             if (job.AdoptedDesignations.Count > 0) o["adopted"] = job.AdoptedDesignations.Count;
             if (job.Trigger.TargetCount != job.EffectiveTarget) o["base_target"] = job.Trigger.TargetCount;
             if (StewardLedger.IsStalled(job)) o["stalled"] = true;
@@ -216,6 +217,27 @@ namespace RimBridge.Steward
             o["check_reachable"] = job.CheckReachable;
             o["settings"] = KindSettings(job);
             return o;
+        }
+
+        /// <summary>The bill a production job manages and the field values it sets back on each run.</summary>
+        static JObject ManagedBill(StockJob_Production pr, int tick)
+        {
+            var bill = pr.Bill!;
+            int next = pr.LastRunTick < 0 ? 0 : Math.Max(0, pr.LastRunTick + pr.UpdateIntervalTicks - tick);
+            return new JObject
+            {
+                ["id"] = bill.GetUniqueLoadID(),
+                ["table"] = (bill.billStack?.billGiver as Thing)?.ThingID,
+                ["added_by_job"] = pr.BillAddedByJob,
+                ["keeps"] = new JObject
+                {
+                    ["repeat_mode"] = BillKeep.Mode,
+                    ["target"] = pr.EffectiveTarget,
+                    ["suspended"] = false,
+                    ["pause_when_satisfied"] = false,
+                },
+                ["next_run_in_hours"] = Math.Round(next / TicksPerHour, 1),
+            };
         }
 
         /// <summary>Designations the job created (adopted external ones are reported separately as "adopted").</summary>
