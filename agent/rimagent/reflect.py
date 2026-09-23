@@ -75,7 +75,8 @@ def compress_timeline(events: list[dict[str, Any]], step_notes: list[str], limit
     return out
 
 
-def episode(ctx: Context, events: list[dict[str, Any]], step_notes: list[str], reason: str, days: int) -> str:
+def episode(ctx: Context, events: list[dict[str, Any]], step_notes: list[str], reason: str, days: int, row: dict[str, Any] | None = None) -> str:
+    """`row` is this episode's score row. The runner records it after the reflection, with the brain commit."""
     prompt = _fmt(
         load_prompt("reflect_episode", DEFAULT_EPISODE),
         reason=reason,
@@ -84,7 +85,7 @@ def episode(ctx: Context, events: list[dict[str, Any]], step_notes: list[str], r
         operator=memory.operator_read(3000) or "(none)",
         notebook=memory.notebook_read() or "(empty)",
         journal=memory.journal_read(20) or "(empty)",
-        scores=scorecard.history_text(12),
+        scores=scorecard.history_text(12, pending=row),
         skills_index=skills.index_text(),
     )
     res = think(ctx, prompt, situation_hint="reflection lessons " + reason, max_calls=30, tool_groups={"brain", "knowledge", "meta"}, trigger="episode reflection")

@@ -34,8 +34,11 @@ def history(last: int = 20) -> list[dict[str, Any]]:
     return rows[-last:]
 
 
-def history_text(last: int = 12) -> str:
+def history_text(last: int = 12, pending: dict[str, Any] | None = None) -> str:
+    """`pending` is a row not yet recorded. It is shown last, with no brain commit."""
     rows = history(last)
+    if pending is not None:
+        rows = (rows + [pending])[-last:]
     if not rows:
         return "(no episodes scored yet)"
     out = ["episode | seed | days | colonists | deaths | wealth | score | assisted | skills-sha | ended"]
