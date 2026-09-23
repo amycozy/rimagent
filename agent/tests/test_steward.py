@@ -67,6 +67,17 @@ def test_steward_text_renders_posture_stock_problems_and_unmanaged():
     assert len(lines) <= 25
 
 
+def test_suspended_job_reports_age_owner_and_reason():
+    row = {"kind": "hunting", "label": "meat", "target": 100, "current": 0, "enabled": True, "suspended": True, "last_run_hours_ago": 158.2,
+           "suspended_hours_ago": 158.1, "suspended_by": "director", "suspend_reason": "no valid animals in radius, food fine (6.4d)"}
+    assert loop.steward_stock_line(row) == 'meat 0/100 hunting suspended 158h ago by you: "no valid animals in radius, food fine (6.4d)" (last run 158h ago)'
+    row.update(suspended_by="steward", suspend_reason="3 failed runs: NullReferenceException", suspended_hours_ago=2.0)
+    assert 'suspended 2h ago by the steward: "3 failed runs: NullReferenceException"' in loop.steward_stock_line(row)
+    # suspended before the mod recorded it: no age, no owner, no reason
+    row.update(suspended_hours_ago=None, suspended_by=None, suspend_reason=None)
+    assert loop.steward_stock_line(row) == "meat 0/100 hunting suspended (last run 158h ago)"
+
+
 def test_steward_text_below_target_is_flagged_and_quiet_when_fine():
     st = {"enabled": {"scorer": True, "stock": True}, "posture": None, "pawns": [], "stock": [{"kind": "forestry", "label": "wood", "target": 500, "current": 120, "enabled": True, "failures": 0, "summary": "cut 4 trees", "last_run_hours_ago": 0.5}], "problems": []}
     text = loop.steward_text(st)

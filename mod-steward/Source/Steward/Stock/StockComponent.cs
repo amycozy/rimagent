@@ -135,6 +135,7 @@ namespace RimBridge.Steward.Stock
                 job.ConsecutiveFailures++;
                 if (job.ConsecutiveFailures >= 3)
                 {
+                    job.Suspension.Apply(job.Suspended, true, Suspension.BySteward, $"{job.ConsecutiveFailures} failed runs: {ex.Message}", Find.TickManager.TicksGame);
                     job.Suspended = true;
                     StewardLog.Warning($"stock: {job} suspended after repeated errors: {ex}");
                 }

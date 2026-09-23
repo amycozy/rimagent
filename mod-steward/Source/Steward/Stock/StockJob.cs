@@ -25,6 +25,7 @@ namespace RimBridge.Steward.Stock
         public int UpdateIntervalTicks = DefaultUpdateIntervalTicks;
         public int LastRunTick = -1;
         public bool Suspended;
+        public readonly Suspension Suspension = new Suspension();
         public bool Managed = true;
         public bool CheckReachable = true;
         public bool UsePathBasedDistance;
@@ -268,6 +269,9 @@ namespace RimBridge.Steward.Stock
             Scribe_Values.Look(ref UpdateIntervalTicks, "updateInterval", DefaultUpdateIntervalTicks);
             Scribe_Values.Look(ref LastRunTick, "lastRunTick", -1);
             Scribe_Values.Look(ref Suspended, "suspended");
+            Scribe_Values.Look(ref Suspension.Tick, "suspendedTick", -1);
+            Scribe_Values.Look(ref Suspension.By, "suspendedBy");
+            Scribe_Values.Look(ref Suspension.Reason, "suspendReason");
             Scribe_Values.Look(ref Managed, "managed", true);
             Scribe_Values.Look(ref CheckReachable, "checkReachable", true);
             Scribe_Values.Look(ref UsePathBasedDistance, "usePathBasedDistance");
