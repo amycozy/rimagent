@@ -263,7 +263,10 @@ class Registry:
         """Returns (result, ok). Never raises."""
         t = self.tools.get(name)
         if t is None:
-            return {"error": f"unknown tool {name!r}"}, False
+            error = f"unknown tool {name!r}"
+            if "rw_" + name in self.tools:
+                error += f"; {'rw_' + name!r} exists"
+            return {"error": error}, False
         try:
             if t.source == "bridge":
                 return t.fn(ctx, **args), True
