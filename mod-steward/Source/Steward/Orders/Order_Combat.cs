@@ -15,9 +15,9 @@ namespace RimBridge.Steward.Orders
     /// <summary>
     /// Hostiles that threaten the base (inside the Home area, near the rally, or assaulting) → draft every capable armed
     /// colonist to distinct cells inside the rally rect (cover first), restrict non-fighters to the Home area, hold
-    /// positions every 250 ticks, attack the nearest hostile when the rally is overrun; sieges, staging raids and
-    /// manhunters with everybody indoors are only watched. 600 hostile-free ticks → undraft what it drafted, restore
-    /// areas, run rescue once. All state is per map.
+    /// positions every 250 ticks, attack the nearest hostile when the base is overrun (a hostile near the rally or inside
+    /// an enclosed room of the base); sieges, staging raids and manhunters with everybody indoors are only watched.
+    /// 600 hostile-free ticks → undraft what it drafted, restore areas, run rescue once. All state is per map.
     /// </summary>
     public sealed class Order_Combat : Order
     {
@@ -34,7 +34,8 @@ namespace RimBridge.Steward.Orders
             "centre when no rally is set; nowhere on a map without a base). Non-fighters are restricted to the Home area. Positions are re-issued " +
             "every 250 ticks; pawns undrafted by a job are re-drafted. A fighter whose food or rest falls below 15% with no hostile within " +
             $"{CombatTimers.NearHostileRadius:0} cells is relieved (undrafted) and drafted again once both are above 50%; not while overrun. A hostile " +
-            "inside the home area or within 5 cells of the rally centre switches every fighter to attack its nearest hostile. After 600 " +
+            "within 5 cells of the rally centre, or inside an enclosed room of the base (Room.ProperRoom in the Home area), switches every fighter " +
+            "to attack its nearest hostile; the summary names that hostile, its cell and the reason. After 600 " +
             "hostile-free ticks the order undrafts what it drafted (not pawns under a live ui.draft/goto/attack/drafted order/draft gizmo " +
             "touch: they are retried each pass until the touch expires and named in the summary), restores the previous allowed areas " +
             "(unless the director changed the area meanwhile), runs the rescue order once and writes combat_released. Engagements longer " +
@@ -62,7 +63,7 @@ namespace RimBridge.Steward.Orders
             yield return "rally: distinct standable cells inside the rally rect, cover-adjacent cells first, spread apart; without a rally rect a 13x13 square around the base centre; on a map without Home area or colonist buildings pawns are drafted but not moved";
             yield return "non-fighters: restricted to the Home area (previous area remembered and restored on release unless the director changed it)";
             yield return "hold: every 250 ticks re-send wanderers and re-draft pawns a job undrafted; only pawns the order actually drafted are undrafted at release";
-            yield return "overrun: a hostile inside the home area or within 5 cells of the rally centre → every fighter attacks its nearest engaged hostile (melee weapon → melee, else ranged)";
+            yield return "overrun: a hostile within 5 cells of the rally centre or inside an enclosed room of the base (Room.ProperRoom: not touching the map edge, not a doorway; in the Home area when there is one); outdoor Home cells do not count → every fighter attacks its nearest engaged hostile (melee weapon → melee, else ranged)";
             yield return "release: 600 hostile-free ticks → undraft what the order drafted (a pawn under a live ui.draft/goto/attack/drafted-order/draft-gizmo touch stays drafted and is retried each pass until the touch expires), restore areas, run rescue once; ledger combat_released names what was left to you";
             yield return $"prolonged: engaged longer than {CombatTimers.ProlongedTicks} ticks → one ledger combat_prolonged";
             yield return "never: dev tools, non-hostile targets, colony pawns or animals, pawns the director drafted/moved by hand, pawns marked unmanaged";
@@ -280,7 +281,9 @@ namespace RimBridge.Steward.Orders
         {
             var home = map.areaManager.Home;
             bool homeUsable = home != null && home.TrueCount > 0;
-            bool overrun = hostiles.Any(h => h.Position.DistanceTo(center) <= CombatTimers.OverrunRadius || (homeUsable && home![h.Position]));
+            var overrunFacts = hostiles.Select(h => OverrunFactsFor(h, map, center, homeUsable ? home : null)).ToList();
+            string overrunBy = OverrunRules.Why(overrunFacts);
+            bool overrun = overrunBy.Length > 0;
 
             var colonists = map.mapPawns.FreeColonistsSpawned.ToList();
             var fighters = new List<Pawn>();
@@ -329,7 +332,7 @@ namespace RimBridge.Steward.Orders
 
             if (overrun)
             {
-                st.lastMode = "attacking";
+                st.lastMode = "overrun by " + overrunBy + ", left the rally";
                 foreach (var p in fighters)
                 {
                     var target = NearestHostile(p, hostiles);
@@ -378,13 +381,31 @@ namespace RimBridge.Steward.Orders
             if (first)
             {
                 StewardLedger.Orders("combat_engaged", $"{hostiles.Count} hostiles, {fighters.Count} drafted",
-                    new JObject { ["hostiles"] = hostiles.Count, ["drafted"] = fighters.Count, ["overrun"] = overrun, ["rally"] = RallyJson(rect), ["map"] = map.uniqueID });
+                    new JObject { ["hostiles"] = hostiles.Count, ["drafted"] = fighters.Count, ["overrun"] = overrun, ["overrun_by"] = overrunBy, ["rally"] = RallyJson(rect), ["map"] = map.uniqueID });
             }
-            string mode = overrun ? $"overrun: {attacking} attacking" : hasBase ? $"holding rally: {moved} moved" : "holding in place (no base on this map)";
+            string mode = overrun ? $"overrun, left the rally: {attacking} attacking" : hasBase ? $"holding rally: {moved} moved" : "holding in place (no base on this map)";
             report.Summary = $"engaged: {hostiles.Count} hostile(s), {fighters.Count} fighting (+{drafted} drafted now), {mode}, {st.prevArea.Count} restricted to Home"
                 + (restricted > 0 ? $" (+{restricted})" : "")
                 + (relieved > 0 ? $"; relieved to eat/sleep: {string.Join(", ", relievedNames)}" : "")
-                + (st.relieved.Count > 0 && relieved == 0 ? $"; {st.relieved.Count} resting" : "");
+                + (st.relieved.Count > 0 && relieved == 0 ? $"; {st.relieved.Count} resting" : "")
+                + (overrun ? $"; overrun by {overrunBy}" : "");
+        }
+
+        static OverrunFacts OverrunFactsFor(Thing h, Map map, IntVec3 center, Area? home)
+        {
+            var room = h.Position.GetRoom(map);
+            bool proper = room != null && room.ProperRoom;
+            return new OverrunFacts
+            {
+                Label = h.LabelShort,
+                X = h.Position.x,
+                Z = h.Position.z,
+                DistToRally = h.Position.DistanceTo(center),
+                ProperRoom = proper,
+                HomeUsable = home != null,
+                InHome = home != null && home[h.Position],
+                RoomLabel = proper ? room!.GetRoomRoleLabel() : "",
+            };
         }
 
         static JArray RallyJson(CellRect r) => new JArray(r.minX, r.minZ, r.Width, r.Height);

@@ -159,6 +159,35 @@ namespace RimBridge.Tests
         }
 
         [Fact]
+        public void OverrunRules_OutdoorHomeCellIsNotOverrun()
+        {
+            var turbine = new OverrunFacts { Label = "Raider", X = 40, Z = 60, DistToRally = 18, HomeUsable = true, InHome = true };
+            Assert.Equal(OverrunReason.None, OverrunRules.Reason(turbine));
+            Assert.Equal(-1, OverrunRules.Nearest(new[] { turbine }));
+            Assert.Equal("", OverrunRules.Why(new[] { turbine }));
+        }
+
+        [Fact]
+        public void OverrunRules_RallyRadiusOrEnclosedRoomOfTheBase()
+        {
+            Assert.Equal(OverrunReason.RallyRadius, OverrunRules.Reason(new OverrunFacts { DistToRally = 5 }));
+            Assert.Equal(OverrunReason.EnclosedRoom, OverrunRules.Reason(new OverrunFacts { DistToRally = 12, ProperRoom = true, HomeUsable = true, InHome = true }));
+            Assert.Equal(OverrunReason.None, OverrunRules.Reason(new OverrunFacts { DistToRally = 12, ProperRoom = true, HomeUsable = true }));   // a shed outside Home
+            Assert.Equal(OverrunReason.EnclosedRoom, OverrunRules.Reason(new OverrunFacts { DistToRally = 12, ProperRoom = true }));            // no Home area
+        }
+
+        [Fact]
+        public void OverrunRules_WhyNamesNearestHostileCellAndReason()
+        {
+            var outside = new OverrunFacts { Label = "Raider", X = 40, Z = 60, DistToRally = 18, HomeUsable = true, InHome = true };
+            var kitchen = new OverrunFacts { Label = "Shooter", X = 52, Z = 61, DistToRally = 9, ProperRoom = true, HomeUsable = true, InHome = true, RoomLabel = "kitchen" };
+            var rally = new OverrunFacts { Label = "Clubber", X = 55, Z = 58, DistToRally = 3.2f, HomeUsable = true, InHome = true };
+            Assert.Equal("Shooter at (52,61) inside room kitchen (enclosed)", OverrunRules.Why(new[] { outside, kitchen }));
+            Assert.Equal(2, OverrunRules.Nearest(new[] { outside, kitchen, rally }));
+            Assert.Equal("Clubber at (55,58) in rally radius (3 cells); +1 more", OverrunRules.Why(new[] { outside, kitchen, rally }));
+        }
+
+        [Fact]
         public void ThreatRules_WatchVersusEngage()
         {
             Assert.True(ThreatRules.Engage(new HostileFacts { IsPawn = true, HasLord = true, Siege = true, InHome = true, DistToRally = 100 }));
