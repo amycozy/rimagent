@@ -104,6 +104,55 @@ def test_bridge_tool_forwards_to_ctx_bridge_call():
     assert calls == [("state.summary", {"detail": "full"})]
 
 
+class _SpeedBridge:
+    def __init__(self):
+        self.calls = []
+
+    def call(self, method, **params):
+        self.calls.append((method, params))
+        return {"ok": True}
+
+
+def _speed_ctx(hold):
+    class Ctx:
+        bridge = _SpeedBridge()
+        extra = {"hold_pause": hold}
+    return Ctx()
+
+
+def _speed_registry():
+    reg = Registry()
+    reg.add_bridge_methods([{"method": "game.speed", "doc": ""}, {"method": "game.pause", "doc": ""}])
+    return reg
+
+
+def test_paused_step_defers_game_speed_to_end_turn():
+    reg, ctx = _speed_registry(), _speed_ctx(True)
+    result, ok = reg.execute(ctx, "rw_game_speed", {"speed": "1"})
+    assert ok is True
+    assert result["paused"] is True and result["deferred"] is True and result["speed_at_end_turn"] == 1
+    assert ctx.bridge.calls == []
+    assert ctx.extra["model_speed"] == 1
+
+
+def test_paused_step_defers_unpause_but_passes_a_pause():
+    reg, ctx = _speed_registry(), _speed_ctx(True)
+    result, _ = reg.execute(ctx, "rw_game_pause", {"paused": False})
+    assert result["deferred"] is True
+    assert ctx.bridge.calls == []
+    reg.execute(ctx, "rw_game_pause", {"paused": True})
+    assert ctx.bridge.calls == [("game.pause", {"paused": True})]
+    assert ctx.extra["model_speed"] == 0
+
+
+def test_running_step_applies_game_speed_at_once():
+    reg, ctx = _speed_registry(), _speed_ctx(False)
+    result, _ = reg.execute(ctx, "rw_game_speed", {"speed": 2})
+    assert result == {"ok": True}
+    assert ctx.bridge.calls == [("game.speed", {"speed": 2})]
+    assert ctx.extra["model_speed"] == 2
+
+
 def test_specs_group_filter_keeps_brain_tools_and_honours_exclude():
     reg = Registry()
     reg.add_bridge_methods([{"method": "state.summary", "doc": ""}, {"method": "game.speed", "doc": ""}])

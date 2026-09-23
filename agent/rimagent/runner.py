@@ -384,6 +384,7 @@ class Runner:
             try:
                 self.bridge.call("game.pause", paused=True)
                 self.ctx.extra["model_speed"] = None  # runner restores play speed after the step unless the model sets one
+                self.ctx.extra["hold_pause"] = True   # the rest of this step runs paused
             except BridgeError:
                 pass
         return urgent
@@ -457,11 +458,14 @@ class Runner:
             pass
         self.thinking = True
         self.ctx.extra.pop("model_speed", None)
+        # A step that starts paused stays paused: the model's game.speed / game.pause(false) waits for end_turn.
+        self.ctx.extra["hold_pause"] = think_speed <= 0
         self.bus.emit("status", {"phase": "thinking"})
         try:
             fn()
         finally:
             self.thinking = False
+            self.ctx.extra["hold_pause"] = False
             # Restore play speed, unless the model chose one during the step (e.g. 1x for a raid). Never leave it paused.
             chosen = self.ctx.extra.get("model_speed")
             speed = int(play.get("speed", 3)) if chosen is None else max(1, int(chosen))
