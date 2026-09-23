@@ -251,7 +251,17 @@ def steward_stock_line(row: dict[str, Any]) -> str:
     head = f"{label} {current if current is not None else '?'}/{target if target is not None else '?'} {kind} {state}"
     if bad and summary:
         head += f": {summary[:120]}"
-    return ("✗ " if bad else "") + head + f" (last run {_hours_ago(row.get('last_run_hours_ago'))})"
+    return ("✗ " if bad else "") + head + f" (last run {_hours_ago(row.get('last_run_hours_ago'))})" + _managed_bill(row.get("bill"))
+
+
+def _managed_bill(bill: Any) -> str:
+    """A production job's bill: `; bill Bill_X_2, added by job: no, keeps repeat_mode=TargetCount target=22`."""
+    if not isinstance(bill, dict) or not bill.get("id"):
+        return ""
+    keeps = bill.get("keeps") if isinstance(bill.get("keeps"), dict) else {}
+    kept = " ".join(f"{k}={json.dumps(v) if isinstance(v, bool) else v}" for k, v in keeps.items())
+    added = {True: "yes", False: "no"}.get(bill.get("added_by_job"), "?")
+    return f"; bill {bill['id']}, added by job: {added}" + (f", keeps {kept}" if kept else "")
 
 
 def rally_is_set(rally: Any) -> bool:
