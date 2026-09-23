@@ -283,9 +283,15 @@ def order_acted_since_step(o: dict[str, Any], since_hours: float | None) -> tupl
     return False, ""
 
 
+def order_age(o: dict[str, Any]) -> str:
+    """` (last run 3m ago)`: the age of the summary on an order line. Empty when the mod does not send it (older mod)."""
+    h = o.get("last_run_hours_ago")
+    return f" (last run {_hours_ago(h)})" if h is not None else ""
+
+
 def steward_orders_lines(status: dict[str, Any], colonists: int | None = None, since_hours: float | None = None) -> list[str]:
     """Standing orders as packet lines, all omitted when the mod does not report them (older mod):
-    `orders: combat(rally set) rescue ✗corpses …` (✗ = disabled), one `- id: summary (acting on N)` line per order that
+    `orders: combat(rally set) rescue ✗corpses …` (✗ = disabled), one `- id: summary (acting on N) (last run 3m ago)` line per order that
     acted since the last step (see order_acted_since_step), a `- id: state` line for any order reporting a persistent
     `state` (combat engaged, food switch active), and the rally reminder when no rally rect exists and colonists >= 3."""
     lines: list[str] = []
@@ -309,10 +315,12 @@ def steward_orders_lines(status: dict[str, Any], colonists: int | None = None, s
             state = str(o.get("state") or "").strip()[:140]
             if acted:
                 acting_now = (_num(o.get("acting_on")) or 0) > 0
-                summary = str((o.get("summary") if acting_now else o.get("last_acted_summary") or o.get("summary")) or "").strip()[:140] or "active"
-                acting.append(f"- {oid}: {summary}{suffix}" + (f"; {state}" if state and state != summary else ""))
+                last_acted = not acting_now and bool(o.get("last_acted_summary"))
+                summary = str((o.get("last_acted_summary") if last_acted else o.get("summary")) or "").strip()[:140] or "active"
+                age = "" if last_acted else order_age(o)
+                acting.append(f"- {oid}: {summary}{suffix}{age}" + (f"; {state}" if state and state != summary else ""))
             elif state:
-                acting.append(f"- {oid}: {state}")
+                acting.append(f"- {oid}: {state}{order_age(o)}")
         lines.append("orders: " + " ".join(words))
         lines += acting[:_STEWARD_MAX_ORDER_LINES]
         if len(acting) > _STEWARD_MAX_ORDER_LINES:

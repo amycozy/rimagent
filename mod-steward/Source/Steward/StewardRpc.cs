@@ -65,7 +65,7 @@ namespace RimBridge.Steward
 
         // ───────────────────────────── status ─────────────────────────────
 
-        [Rpc("steward.status", "steward overview: {enabled: {scorer, stock}, posture: null|{label, expires_in_hours, work, weights, targets}, pawns: [{id, name, managed, priorities: {WorkTypeDef: 1-4}, top: [{work, priority, why}]}], stock: [{id, kind, label, target, current, enabled, suspended, managed, last_run_hours_ago, designations (created by the job), adopted? (external designations counted toward the target, never removed by the job), failures, summary, notes}], problems: [string], orders: [{id, enabled, summary, acting_on}] (standing orders, see steward.orders), rally: [x,z,w,h]|null}")]
+        [Rpc("steward.status", "steward overview: {enabled: {scorer, stock}, posture: null|{label, expires_in_hours, work, weights, targets}, pawns: [{id, name, managed, priorities: {WorkTypeDef: 1-4}, top: [{work, priority, why}]}], stock: [{id, kind, label, target, current, enabled, suspended, managed, last_run_hours_ago, designations (created by the job), adopted? (external designations counted toward the target, never removed by the job), failures, summary, notes}], problems: [string], orders: [{id, enabled, last_run_hours_ago, summary, acting_on}] (standing orders, see steward.orders), rally: [x,z,w,h]|null}")]
         public static JToken Status(JObject p)
         {
             var map = Map();

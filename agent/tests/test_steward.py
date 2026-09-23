@@ -241,7 +241,7 @@ def test_orders_acting_summaries_only_when_acting_on_positive():
     text = loop.steward_text(_with_orders(acting, [40, 40, 6, 6]), colonists=5)
     lines = text.splitlines()
     i = lines.index("orders: combat(rally set) rescue unforbid ✗corpses beds policies blueprints fire")
-    assert lines[i + 1] == "- combat: drafted 4 to rally, 2 hostiles (acting on 4)"
+    assert lines[i + 1] == "- combat: drafted 4 to rally, 2 hostiles (acting on 4) (last run 6m ago)"
     assert lines[i + 2] == "- rescue: rescuing Bob (acting on 1)"
     assert not any(l.startswith("- corpses") for l in lines)
     # unknown ids from a newer mod are appended, missing summary -> "active"
