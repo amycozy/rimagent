@@ -21,7 +21,7 @@ def stub(think_speed_urgent=0, think_speed_calm=1):
         ctx=SimpleNamespace(extra={}),
         bus=SimpleNamespace(emit=lambda *a, **k: None),
         thinking=False,
-        controls=SimpleNamespace(paused=False),   # the lab runner reads it at step end
+        controls=SimpleNamespace(paused=False),   # a runner with an operator pause reads it at step end
     )
 
 

@@ -134,8 +134,8 @@ class Registry:
                         return ctx.bridge.call(method_name, **params)
                     pausing = method_name == "game.pause" and params.get("paused", True) is not False
                     speed = 0 if pausing else int(params.get("speed", 1) if method_name == "game.speed" else ctx.extra.get("model_speed") or 1)
-                    # A paused step stays paused. 2.1 day 12: an urgent step set speed 1 at 330 s and thought for
-                    # 195 s more; two colonists went down and the stores burned before it ended.
+                    # A paused step stays paused. An urgent step once set speed 1 at 330 s and thought for 195 s
+                    # more; two colonists went down and the stores burned before it ended.
                     if ctx.extra.get("hold_pause") and speed > 0:
                         ctx.extra["model_speed"] = speed
                         return {"paused": True, "deferred": True, "speed_at_end_turn": speed,
