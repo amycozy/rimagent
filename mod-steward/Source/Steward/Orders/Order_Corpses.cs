@@ -24,7 +24,9 @@ namespace RimBridge.Steward.Orders
             "Every 1500 ticks. Human corpses: if an empty grave or sarcophagus accepts the corpse it is unforbidden and gets a Haul designation " +
             "(one corpse per free grave); else, if a stockpile/shelf accepts corpses, it is stripped (Strip designation) and hauled there; else, " +
             "if a work table with the cremation recipe exists, one standing 'cremate corpse' bill (forever, humanlike corpses, rotten allowed) is " +
-            "kept and the corpse is unforbidden. Fresh animal corpses: one standing 'butcher creature' bill (forever) on a butcher table/spot; " +
+            "kept and the corpse is unforbidden; with none of the three, a fresh human corpse is left where it lies and named in the summary. " +
+            "A human corpse is never butchered, whatever the ideoligion: the order adds no butcher bill for human corpses. Fresh animal " +
+            "corpses: one standing 'butcher creature' bill (forever) on a butcher table/spot; " +
             "if none exists a butcher spot is placed once near the kitchen or the main stockpile. Rotten/dessicated corpses: hauled to a stockpile " +
             "that accepts rotten corpses (dumping stockpile) if one exists, else rotten human corpses go to cremation, else nothing. A standing bill " +
             "that exists in any state (suspended too) is never duplicated; a bill this order created that the director deleted is not re-created " +
@@ -44,7 +46,8 @@ namespace RimBridge.Steward.Orders
         {
             yield return "guard: nothing while the combat order is engaged; corpses in rooms with hostile-faction buildings, fogged, unreachable or forbidden by hand (ui.designate) are left alone";
             yield return "rotten/dessicated (any race): Haul designation + unforbid if a stockpile accepts rotten corpses; else humans → cremation bill; else nothing";
-            yield return "human, fresh: empty grave/sarcophagus that accepts it → unforbid + Haul designation (one per grave); else stockpile accepting corpses → Strip + Haul; else crematorium/campfire with the cremate recipe → one standing cremate bill + unforbid";
+            yield return "human, fresh: empty grave/sarcophagus that accepts it → unforbid + Haul designation (one per grave); else stockpile accepting corpses → Strip + Haul; else crematorium/campfire with the cremate recipe → one standing cremate bill + unforbid; else nothing: the corpse is left and named in the summary (counted in acting_on)";
+            yield return "human, never: butchered. The ideoligion is not read; the order adds no butcher bill for human corpses";
             yield return $"animal, fresh: one standing '{ButcherRecipe}' bill (repeat forever, rotten disallowed) on the first butcher table/spot; corpses near the base are unforbidden; no table → one {ButcherSpotDef} placed near the kitchen/stockpile (once)";
             yield return "bills: a bill of the recipe in any state (suspended counts) means present; a bill this order created and the director deleted is not re-created for 2 days (owned key bill:<recipe>)";
             yield return "ledger: corpses {buried, butcher_bill, burned, hauled, dumped} only when something new was designated";
@@ -76,6 +79,7 @@ namespace RimBridge.Steward.Orders
 
             int buried = 0, hauled = 0, burned = 0, dumped = 0, animals = 0, skipped = 0, stored = 0;
             int newBuried = 0, newBurned = 0, newHauled = 0, newDumped = 0;
+            var humansLeft = new List<string>();
             bool butcherBillCreated = false, cremateBillCreated = false;
             string? spotNote = null;
 
@@ -132,6 +136,9 @@ namespace RimBridge.Steward.Orders
                         animals++; report.Act(corpse.ThingID);
                         if (inScope && corpse.IsForbidden(Faction.OfPlayer)) corpse.SetForbidden(false, false);
                         break;
+                    case CorpseAction.None when f.Humanlike && !f.Rotten:
+                        humansLeft.Add(corpse.InnerPawn.LabelShort); report.Act(corpse.ThingID);
+                        break;
                 }
             }
 
@@ -165,6 +172,7 @@ namespace RimBridge.Steward.Orders
             }
 
             var parts = new List<string>();
+            if (humansLeft.Count > 0) parts.Add(CorpseText.HumansLeft(humansLeft));
             if (buried > 0) parts.Add($"{buried} to graves");
             if (hauled > 0) parts.Add($"{hauled} strip+haul");
             if (burned > 0) parts.Add($"{burned} cremating" + (cremateBillCreated ? " (bill added)" : ""));
