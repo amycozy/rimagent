@@ -278,6 +278,8 @@ namespace RimBridge.Steward
         public string? rescueSpotId;
         // fire order
         public Dictionary<string, int> fireSeen = new Dictionary<string, int>();
+        /// <summary>The last fire pass found fire in the home area.</summary>
+        public bool fireBurning;
         public int fireBoostUntil = -1;
         public string fireBoostPosture = "";
         public bool fireBoostOwnsPosture;
@@ -402,6 +404,7 @@ namespace RimBridge.Steward
             Scribe_Collections.Look(ref _lgCombatPrevArea, "combatPrevArea", LookMode.Value, LookMode.Value);
             Scribe_Values.Look(ref rescueSpotId, "rescueSpotId");
             Scribe_Collections.Look(ref fireSeen, "fireSeen", LookMode.Value, LookMode.Value);
+            Scribe_Values.Look(ref fireBurning, "fireBurning");
             Scribe_Values.Look(ref fireBoostUntil, "fireBoostUntil", -1);
             Scribe_Values.Look(ref fireBoostPosture, "fireBoostPosture", "");
             Scribe_Values.Look(ref fireBoostOwnsPosture, "fireBoostOwnsPosture");
