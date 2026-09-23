@@ -44,6 +44,7 @@ namespace RimBridge.Steward.Orders
             yield return "rescue: free colonists and colony animals that are downed, alive and not in a bed; skipped while a Rescue job already targets them or the director already sent someone (ui.job:Rescue, ui.job:TendPatient, a right-click Rescue/Tend order) — ui.attack/draft/goto on the patient do not count";
             yield return "rescuer: nearest free colonist that is not downed, awake, not in a mental state, not drafted (nor drafted by the combat order), not on a player-forced job, not touched (ui.job/order/draft/goto/attack), and can reach the patient";
             yield return "packet: a downed/bleeding patient that is skipped (hands-off, no bed, nobody can rescue, no doctor) still counts as acted on, with the reason in the summary";
+            yield return "summary: 'nobody downed outside a bed' counts only pawns outside a bed; downed pawns in a bed are listed as 'N downed in bed (names)'";
             yield return "bed: RestUtility.FindBedFor (own/medical/any suitable bed, then ignoring other reservations); none + downed colonist → one medical sleeping spot placed near the nearest bed or the base centre";
             yield return $"tend: colonists with time-to-death by blood loss < 6 h ({BleedOutTicks} ticks) needing tending, nobody tending → doctor with best Medicine skill (Caring allowed, Doctor work not disabled) gets TendPatient with the best medicine allowed";
             yield return "ledger: rescue {pawn, by, action: rescue|tend}";
@@ -60,8 +61,12 @@ namespace RimBridge.Steward.Orders
 
             // ── downed → rescue ──
             var downed = new List<Pawn>();
-            foreach (var p in colonists) if (p.Downed && !p.Dead && !p.InBed()) downed.Add(p);
-            foreach (var a in map.mapPawns.SpawnedColonyAnimals) if (a.Downed && !a.Dead && !a.InBed()) downed.Add(a);
+            var inBed = new List<string>();
+            foreach (var p in colonists.Concat(map.mapPawns.SpawnedColonyAnimals))
+            {
+                if (!p.Downed || p.Dead) continue;
+                if (p.InBed()) inBed.Add(p.LabelShort); else downed.Add(p);
+            }
 
             var combat = g.Combat(map);
             int rescued = 0, waiting = 0;
@@ -124,7 +129,8 @@ namespace RimBridge.Steward.Orders
             if (rescued > 0) parts.Add($"{rescued} rescue job(s) issued");
             if (waiting > 0) parts.Add($"{waiting} being carried");
             if (tended > 0) parts.Add($"{tended} tend job(s) issued");
-            if (parts.Count == 0 && notes.Count == 0) parts.Add(downed.Count == 0 ? "nobody downed" : "nothing to do");
+            if (parts.Count == 0 && notes.Count == 0) parts.Add(downed.Count == 0 ? RescueText.NobodyOutside : "nothing to do");
+            if (inBed.Count > 0) parts.Add(RescueText.InBed(inBed));
             report.Summary = string.Join(", ", parts.Concat(notes.Take(3)));
             return report;
         }
