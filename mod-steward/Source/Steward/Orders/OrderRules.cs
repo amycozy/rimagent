@@ -177,6 +177,34 @@ namespace RimBridge.Steward.Orders
         }
     }
 
+    /// <summary>One corpse the corpses order sent to storage. To is null when no storage takes it now.</summary>
+    public sealed class CorpseMove
+    {
+        public string Id = "";
+        public int FromX, FromZ, FromDist;
+        public string? To;
+        public int ToX, ToZ, ToDist;
+    }
+
+    /// <summary>Summary text for the corpses the order moves. Dist is cells from the nearest cell of the anchor (home area or base centre).</summary>
+    public static class CorpseMoves
+    {
+        public const int MaxListed = 8;
+
+        public static string Format(IReadOnlyList<CorpseMove> moves, string anchor)
+        {
+            var bits = new List<string>();
+            for (int i = 0; i < moves.Count && i < MaxListed; i++)
+            {
+                var m = moves[i];
+                string to = m.To == null ? "no storage found now" : $"{m.To} [{m.ToX},{m.ToZ}] ({m.ToDist} from {anchor})";
+                bits.Add($"{m.Id} [{m.FromX},{m.FromZ}] ({m.FromDist} from {anchor}) -> {to}");
+            }
+            if (moves.Count > MaxListed) bits.Add($"+{moves.Count - MaxListed} more");
+            return string.Join("; ", bits);
+        }
+    }
+
     /// <summary>One bed a colonist could take, as seen by the beds order.</summary>
     public struct BedCandidate
     {

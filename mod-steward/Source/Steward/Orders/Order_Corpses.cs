@@ -47,6 +47,7 @@ namespace RimBridge.Steward.Orders
             yield return "human, fresh: empty grave/sarcophagus that accepts it → unforbid + Haul designation (one per grave); else stockpile accepting corpses → Strip + Haul; else crematorium/campfire with the cremate recipe → one standing cremate bill + unforbid";
             yield return $"animal, fresh: one standing '{ButcherRecipe}' bill (repeat forever, rotten disallowed) on the first butcher table/spot; corpses near the base are unforbidden; no table → one {ButcherSpotDef} placed near the kitchen/stockpile (once)";
             yield return "bills: a bill of the recipe in any state (suspended counts) means present; a bill this order created and the director deleted is not re-created for 2 days (owned key bill:<recipe>)";
+            yield return "summary Moves: per corpse sent to storage (max 8): id [from] (cells from home) -> storage [cell] (cells from home); the storage is the one the game's haul search picks now (nearest accepting cell to the corpse); without a home area the distance is to the base centre";
             yield return "ledger: corpses {buried, butcher_bill, burned, hauled, dumped} only when something new was designated";
             var g = StewardGame.Current;
             if (g != null && !string.IsNullOrEmpty(g.butcherSpotId)) yield return $"butcher spot placed by this order: {g.butcherSpotId}";
@@ -78,6 +79,8 @@ namespace RimBridge.Steward.Orders
             int newBuried = 0, newBurned = 0, newHauled = 0, newDumped = 0;
             bool butcherBillCreated = false, cremateBillCreated = false;
             string? spotNote = null;
+            var moves = new List<CorpseMove>();
+            var anchor = new HomeDistance(hasHome ? home : null, center);
 
             foreach (var corpse in corpses)
             {
@@ -112,15 +115,15 @@ namespace RimBridge.Steward.Orders
                     case CorpseAction.Bury:
                         freeGraves.Remove(grave!);
                         if (Route(map, corpse, strip: false)) newBuried++;
-                        if (Pending(map, corpse)) { buried++; report.Act(corpse.ThingID); } else stored++;
+                        if (Pending(map, corpse)) { buried++; report.Act(corpse.ThingID); moves.Add(Move(map, corpse, anchor)); } else stored++;
                         break;
                     case CorpseAction.StripAndHaul:
                         if (Route(map, corpse, strip: true)) newHauled++;
-                        if (Pending(map, corpse)) { hauled++; report.Act(corpse.ThingID); } else stored++;
+                        if (Pending(map, corpse)) { hauled++; report.Act(corpse.ThingID); moves.Add(Move(map, corpse, anchor)); } else stored++;
                         break;
                     case CorpseAction.Dump:
                         if (Route(map, corpse, strip: false)) newDumped++;
-                        if (Pending(map, corpse)) { dumped++; report.Act(corpse.ThingID); } else stored++;
+                        if (Pending(map, corpse)) { dumped++; report.Act(corpse.ThingID); moves.Add(Move(map, corpse, anchor)); } else stored++;
                         break;
                     case CorpseAction.Cremate:
                         if (!cremateBillCreated && EnsureBill(cremateTables, cremateRecipe!, cremate: true, g, tick, ref g.cremateBillId)) cremateBillCreated = true;
@@ -175,7 +178,46 @@ namespace RimBridge.Steward.Orders
             if (skipped > 0) parts.Add($"{skipped} skipped (hands-off/hostile/unreachable)");
             if (parts.Count == 0) parts.Add($"{corpses.Count} corpse(s), nothing routable (no grave, corpse stockpile or crematorium)");
             report.Summary = string.Join(", ", parts);
+            if (moves.Count > 0) report.Summary += ". Moves: " + CorpseMoves.Format(moves, anchor.Label);
             return report;
+        }
+
+        /// <summary>From-cell and the storage the game's own haul search picks now (carrier-free, nearest cell first).</summary>
+        static CorpseMove Move(Map map, Corpse corpse, HomeDistance anchor)
+        {
+            var m = new CorpseMove { Id = corpse.ThingID, FromX = corpse.Position.x, FromZ = corpse.Position.z, FromDist = anchor.To(corpse.Position) };
+            IntVec3 at = IntVec3.Invalid;
+            IHaulDestination? dest = null;
+            if (corpse.IsInValidBestStorage())
+            {
+                dest = StoreUtility.CurrentHaulDestinationOf(corpse);
+                at = corpse.Position;
+            }
+            else if (StoreUtility.TryFindBestBetterStorageFor(corpse, null, map, StoreUtility.CurrentStoragePriorityOf(corpse), Faction.OfPlayer, out var cell, out dest, needAccurateResult: false))
+                at = cell.IsValid ? cell : dest is Thing t ? t.Position : IntVec3.Invalid;
+            if (dest == null || !at.IsValid) return m;
+            m.To = dest switch { Zone z => z.label, Thing t => t.ThingID, _ => dest.GetType().Name };
+            m.ToX = at.x; m.ToZ = at.z; m.ToDist = anchor.To(at);
+            return m;
+        }
+
+        /// <summary>Cells to the nearest home-area cell (0 inside it); without a home area, cells to the base centre.</summary>
+        sealed class HomeDistance
+        {
+            readonly Area? home;
+            readonly IntVec3 center;
+            List<IntVec3>? cells;
+            public string Label => home != null ? "home" : "base centre";
+            public HomeDistance(Area? home, IntVec3 center) { this.home = home; this.center = center; }
+            public int To(IntVec3 c)
+            {
+                if (home == null) return (int)Math.Round(c.DistanceTo(center));
+                if (home[c]) return 0;
+                cells ??= home.ActiveCells.ToList();
+                float best = float.MaxValue;
+                foreach (var h in cells) { float d = (h - c).LengthHorizontalSquared; if (d < best) best = d; }
+                return (int)Math.Round(Math.Sqrt(best));
+            }
         }
 
         /// <summary>Unforbid + Haul designation (+ Strip). Returns true when something changed.</summary>
