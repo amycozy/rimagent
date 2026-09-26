@@ -42,9 +42,10 @@ namespace RimBridge.Steward.Orders
             return row;
         }
 
-        /// <summary>[{id, enabled, summary, acting_on, state?}] for steward.status.</summary>
+        /// <summary>[{id, enabled, last_run_hours_ago, summary, acting_on, state?}] for steward.status.</summary>
         public static JArray StatusRows()
         {
+            int tick = Find.TickManager?.TicksGame ?? 0;
             var arr = new JArray();
             foreach (var o in StandingOrders.All)
             {
@@ -52,6 +53,7 @@ namespace RimBridge.Steward.Orders
                 {
                     ["id"] = o.Id,
                     ["enabled"] = o.Enabled,
+                    ["last_run_hours_ago"] = StandingOrders.LastRunTick(o) is var last && last >= 0 ? (JToken)Math.Round((tick - last) / TicksPerHour, 2) : JValue.CreateNull(),
                     ["summary"] = StandingOrders.LastSummary(o) is { } s ? (JToken)s : JValue.CreateNull(),
                     ["acting_on"] = StandingOrders.ActingOn(o),
                 };
