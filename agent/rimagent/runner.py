@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import webbrowser
 import threading
@@ -85,6 +86,14 @@ def wake_floor(play: dict, urgent: bool, model_speed=None, hostiles: bool = Fals
     if urgent or hostiles or model_speed is not None:
         return float(play.get("min_wake_hours_urgent", 0.5))
     return float(play.get("min_wake_hours", 3))
+
+
+def alert_key(alert: dict[str, Any]) -> str:
+    """The cooldown key of a game alert: its type id when the bridge sends one, else the label without digits.
+    The game writes countdowns into labels ("Quest expires in 11 hours"), so a raw label never repeats."""
+    if alert.get("id"):
+        return str(alert["id"])
+    return re.sub(r"\d+", "", str(alert.get("label", "")))
 
 
 class Controls:
@@ -213,7 +222,7 @@ class Runner:
         self._status_at = 0.0
         self._last_alive = time.time()
         self._alerts_at = 0.0
-        self._seen_alerts: dict[str, int] = {}   # label -> tick last woken for it
+        self._seen_alerts: dict[str, int] = {}   # alert_key -> tick last woken for it
         self._last_step_end_tick = 0
         self.critical_kinds = set(cfg["play"].get("critical_kinds", ["dialog", "danger", "manhunter", "hostile_group", "colonist_downed", "colonist_died", "mental_break", "building_lost"]))
         self.critical_kinds.discard("steward")   # steward ledger events (stock stalled/reached, posture expired) are ordinary wakes, never interrupts
@@ -467,18 +476,19 @@ class Runner:
         live = set()
         for a in alerts:
             label = str(a.get("label", "")); pr = str(a.get("priority", ""))
-            live.add(label)
+            key = alert_key(a)
+            live.add(key)
             prios = set(self.cfg["play"].get("alert_wake_priorities", ["Critical"]))
             urgent = pr in prios or "idle" in label.lower()
             if not urgent:
                 continue
-            last = self._seen_alerts.get(label)
+            last = self._seen_alerts.get(key)
             if last is None or tick - last > float(self.cfg["play"].get("alert_rewake_hours", 24)) * TICKS_PER_HOUR:
-                self._seen_alerts[label] = tick
+                self._seen_alerts[key] = tick
                 trigger = trigger or f"alert ({pr}): {label}"
-        for label in list(self._seen_alerts):
-            if label not in live:
-                del self._seen_alerts[label]  # cleared alerts may wake again if they return
+        for key in list(self._seen_alerts):
+            if key not in live:
+                del self._seen_alerts[key]  # cleared alerts may wake again if they return
         return trigger
 
     def is_urgent(self, trigger: str) -> bool:
