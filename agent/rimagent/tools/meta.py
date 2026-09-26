@@ -31,7 +31,7 @@ def rpc(ctx, method: str, params: dict | None = None):
     return ctx.bridge.call(method, **(params or {}))
 
 
-@tool("end_turn", "Finish this think step. Say what you decided, and when to wake next: after N in-game hours and/or on event kinds (letter, incident, colonist_downed, colonist_died, mental_break, hostile_group, quest, day, watcher). The game resumes after this.", {"notes": "1-3 sentences: what you did and what to check next", "wake_in_hours": "in-game hours until the next scheduled step. Fractions are allowed; on a calm step the floor is min_wake_hours, on an urgent one it is min_wake_hours_urgent", "wake_on": "list of event kinds that should wake you early"}, group="meta")
+@tool("end_turn", "Finish this think step. Say what you decided, and when to wake next: after N in-game hours and/or on event kinds (letter, incident, colonist_downed, colonist_died, mental_break, hostile_group, quest, day, watcher). The game resumes after this.", {"notes": "1-3 sentences: what you did and what to check next", "wake_in_hours": "in-game hours until the next scheduled step. Fractions are allowed; the floor is min_wake_hours_urgent on an urgent step, while hostiles are on the map, or while a colonist is downed or bleeding out; otherwise it is min_wake_hours", "wake_on": "list of event kinds that should wake you early"}, group="meta")
 def end_turn(ctx, notes: str = "", wake_in_hours: float | None = None, wake_on: list[str] | None = None):
     ctx.stop_turn = True
     ctx.wake.notes = notes
