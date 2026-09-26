@@ -194,6 +194,9 @@ def journal_read(ctx, last_n: int = 40):
 @tool("journal_append", "Append a lesson to the cross-game journal. Only durable, general lessons, not colony-specific details.", {"title": "short title (optional; derived from the text if omitted)", "text": "the lesson"}, group="brain")
 def journal_append(ctx, text: str, title: str | None = None):
     title = title or text.strip().splitlines()[0][:80]
+    stamp = memory.journal_recorded(title)
+    if stamp:
+        return f"already recorded {stamp} under this title; not appended"
     memory.journal_append(title, text, ctx.episode)
     ctx.emit("brain_change", {"kind": "journal", "action": "append", "title": title})
     return "recorded"

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import re
 
 from .paths import JOURNAL, NOTEBOOK, OPERATOR
 
@@ -31,6 +32,20 @@ def journal_read(last_n: int = 40) -> str:
     entries = JOURNAL.read_text(encoding="utf-8").split("\n## ")
     tail = entries[-last_n:]
     return ("## " if len(entries) > 1 else "") + "\n## ".join(e for e in tail).strip()
+
+
+_JOURNAL_HEAD = re.compile(r"^## (\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: \(episode [^)]*\))?): (.*)$")
+
+
+def journal_recorded(title: str) -> str | None:
+    """The stamp of the journal entry with this title, or None."""
+    if not JOURNAL.exists():
+        return None
+    for line in JOURNAL.read_text(encoding="utf-8").splitlines():
+        m = _JOURNAL_HEAD.match(line)
+        if m and m.group(2).strip() == title.strip():
+            return m.group(1)
+    return None
 
 
 def journal_append(title: str, text: str, episode: int | None = None) -> None:
