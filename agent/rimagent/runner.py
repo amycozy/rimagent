@@ -516,6 +516,7 @@ class Runner:
             self.ctx.extra["model_speed"] = None  # runner restores play speed after the step unless the model sets one
         except BridgeError:
             pass
+        self.ctx.extra["hold_pause"] = danger <= 0   # the rest of this step runs paused
 
     def hostiles_present(self) -> bool:
         """Whether a hostile is on the map right now, whatever this step woke on."""
@@ -538,11 +539,14 @@ class Runner:
             pass
         self.thinking = True
         self.ctx.extra.pop("model_speed", None)
+        # A step that starts paused stays paused: the model's game.speed / game.pause(false) waits for end_turn.
+        self.ctx.extra["hold_pause"] = think_speed <= 0
         self.bus.emit("status", {"phase": "thinking"})
         try:
             fn()
         finally:
             self.thinking = False
+            self.ctx.extra["hold_pause"] = False
             # Restore play speed, unless the model chose one during the step (e.g. 1x for a raid). Never leave it paused.
             chosen = self.ctx.extra.get("model_speed")
             speed = int(play.get("speed", 3)) if chosen is None else max(1, int(chosen))

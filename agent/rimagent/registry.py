@@ -130,10 +130,19 @@ class Registry:
             def make(method_name: str):
                 def fn(ctx, **params):
                     params = {k: coerce_param(v) for k, v in params.items()}
+                    if method_name not in ("game.speed", "game.pause"):
+                        return ctx.bridge.call(method_name, **params)
+                    pausing = method_name == "game.pause" and params.get("paused", True) is not False
+                    speed = 0 if pausing else int(params.get("speed", 1) if method_name == "game.speed" else ctx.extra.get("model_speed") or 1)
+                    # A paused step stays paused. An urgent step once set speed 1 at 330 s and thought for 195 s
+                    # more; two colonists went down and the stores burned before it ended.
+                    if ctx.extra.get("hold_pause") and speed > 0:
+                        ctx.extra["model_speed"] = speed
+                        return {"paused": True, "deferred": True, "speed_at_end_turn": speed,
+                                "note": "this step runs paused; the game stays paused until end_turn, then runs at this speed"}
                     result = ctx.bridge.call(method_name, **params)
-                    if method_name in ("game.speed", "game.pause"):
-                        # remember the model's explicit choice so the runner keeps it after the step
-                        ctx.extra["model_speed"] = 0 if (method_name == "game.pause" and params.get("paused", True)) else int(params.get("speed", 1) if method_name == "game.speed" else ctx.extra.get("model_speed", 1))
+                    # remember the model's explicit choice so the runner keeps it after the step
+                    ctx.extra["model_speed"] = speed
                     return result
                 return fn
 
@@ -289,6 +298,8 @@ BRIDGE_DOC_NOTES: dict[str, str] = {
     "ui.draft": "NOTE: the combat standing order drafts and positions colonists at the rally point by itself; a pawn you draft/move by hand is hands-off for that order for a while (rw_steward_orders_explain combat lists them). Prefer rw_steward_orders_rally to move everyone.",
     "ui.goto": "NOTE: a pawn you move by hand is hands-off for the combat standing order for a while; to move the whole defense set the rally rect with rw_steward_orders_rally.",
     "ui.attack": "NOTE: a pawn you order to attack by hand is hands-off for the combat standing order for a while; use it to override (breachers, sappers, drop pods inside), not for every fight.",
+    "game.speed": "NOTE: in a step that runs paused (urgent), a speed change is recorded and applied at end_turn; the game stays paused while you think.",
+    "game.pause": "NOTE: in a step that runs paused (urgent), paused=false is recorded and applied at end_turn; the game stays paused while you think.",
     "steward.settings": "NOTE: writes the RimBridge mod settings file, which persists across games and episodes (the notebook does not); prefer rw_steward_posture for a per-colony bias. A JSON null removes a globalWorkAdjustments key.",
 }
 
