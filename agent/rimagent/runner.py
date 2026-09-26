@@ -69,7 +69,7 @@ def is_critical(event: dict, critical_kinds: set[str], critical_events: set[str]
     return bool(ev) and ev in critical_events
 
 
-def wake_floor(play: dict, urgent: bool, model_speed=None, hostiles: bool = False) -> float:
+def wake_floor(play: dict, urgent: bool, model_speed=None, hostiles: bool = False, casualty: bool = False) -> float:
     """The shortest wake the model is allowed to ask for.
 
     On an urgent step the floor was a fixed 0.5, so the finest cadence the model could REQUEST during a raid was
@@ -81,9 +81,13 @@ def wake_floor(play: dict, urgent: bool, model_speed=None, hostiles: bool = Fals
     began it: a step that woke on a mood alert while a raid was running was calm, so a wake plan of half an hour
     was raised to the calm floor of eight in-game hours. The world decides this one, not the trigger.
 
+    `casualty` is a colonist who is downed or bleeding out. In one episode a step woke on a scheduled check-in
+    while a colonist lay downed with 2.2 h to bleed out. No hostile was left, so the step was calm, and a wake of
+    0.5 h became 8 h. He died 3.2 h later with no step between.
+
     This is a floor, not a schedule. Nothing wakes more often unless the model asks it to.
     """
-    if urgent or hostiles or model_speed is not None:
+    if urgent or hostiles or casualty or model_speed is not None:
         return float(play.get("min_wake_hours_urgent", 0.5))
     return float(play.get("min_wake_hours", 3))
 
@@ -94,6 +98,14 @@ def alert_key(alert: dict[str, Any]) -> str:
     if alert.get("id"):
         return str(alert["id"])
     return re.sub(r"\d+", "", str(alert.get("label", "")))
+
+
+def casualty_in(summary: dict, play: dict) -> bool:
+    """Whether state.summary shows a colonist downed, or one bleeding out within `bleed_out_urgent_hours`."""
+    if int(summary.get("downed") or 0) > 0:
+        return True
+    hours = summary.get("bleed_out_hours")
+    return hours is not None and float(hours) < float(play.get("bleed_out_urgent_hours", 6))
 
 
 class Controls:
@@ -555,12 +567,18 @@ class Runner:
             pass
         self.ctx.extra["hold_pause"] = danger <= 0   # the rest of this step runs paused
 
-    def hostiles_present(self) -> bool:
-        """Whether a hostile is on the map right now, whatever this step woke on."""
+    def summary(self) -> dict[str, Any]:
+        """state.summary now, whatever this step woke on; empty when the bridge does not answer."""
         try:
-            return bool((self.bridge.call("state.summary") or {}).get("hostiles"))
+            return self.bridge.call("state.summary") or {}
         except BridgeError:
-            return False
+            return {}
+
+    def world_floor(self, urgent: bool) -> float:
+        """The wake floor for this step, read from the world as it is now: hostiles on the map or a casualty."""
+        play = self.cfg["play"]
+        summary = self.summary()
+        return wake_floor(play, urgent, self.ctx.extra.get("model_speed"), bool(summary.get("hostiles")), casualty_in(summary, play))
 
     def with_pause(self, fn, urgent: bool = False) -> None:
         # Calm steps think at think_speed (default: full play speed); urgent ones at danger_think_speed (default: paused).
@@ -611,7 +629,7 @@ class Runner:
         self.step_notes.append(res.notes)
         play = self.cfg["play"]
         hours = self.ctx.wake.in_hours if self.ctx.wake.in_hours else float(play.get("wake_hours", 8))
-        floor = wake_floor(play, self.urgent_step, self.ctx.extra.get("model_speed"), self.hostiles_present())
+        floor = self.world_floor(self.urgent_step)
         hours = max(floor, min(48.0, float(hours)))
         try:
             tick = int(self.bridge.status().get("tick", tick))
@@ -827,7 +845,7 @@ class Runner:
             self.ctx.end_episode_reason = end_reason
         play = self.cfg["play"]
         h = float(plan.get("wake_in_hours") or (min(hours) if hours else float(play.get("wake_hours", 8))))
-        h = max(wake_floor(play, False, self.ctx.extra.get("model_speed"), self.hostiles_present()), min(48.0, h))
+        h = max(self.world_floor(False), min(48.0, h))
         try:
             tick = int(self.bridge.status().get("tick", tick))
         except BridgeError:

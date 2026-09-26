@@ -30,6 +30,7 @@ play:
                                # lower it (e.g. 0.1 = 6 in-game minutes) to let the model ask to think that often.
                                # A floor, not a schedule: nothing wakes more often unless the model asks it to.
   event_cooldown_hours: 3  # non-critical wake events wait this long after a step, then wake it (the first one is kept)
+  bleed_out_urgent_hours: 6   # a colonist this close to bleeding out, or any downed colonist, lowers the wake floor to min_wake_hours_urgent
   alert_wake_priorities: [Critical, High]   # game alerts that interrupt (plus any "idle colonist" alert); others wait for the next step.
                                              # High includes "medical treatment needed"/"colonist in mortal danger": waiting for Critical
                                              # meant a wounded or chased colonist could bleed for hours, sleeping through it, before anything woke the agent.

@@ -49,18 +49,48 @@ def test_no_hostiles_and_a_calm_step_keeps_the_long_floor():
     assert wake_floor(PLAY, urgent=False, hostiles=False) == 8
 
 
-def test_hostiles_present_reads_the_summary_and_survives_a_refusal():
+def test_summary_survives_a_refusal():
     from types import SimpleNamespace
 
     from rimagent.bridge import BridgeError
     from rimagent.runner import Runner
 
-    def bridge(summary):
-        return SimpleNamespace(call=lambda method, **p: summary if method == "state.summary" else {})
-
-    assert Runner.hostiles_present(SimpleNamespace(bridge=bridge({"hostiles": [{"id": "h1"}]}))) is True
-    assert Runner.hostiles_present(SimpleNamespace(bridge=bridge({}))) is False
-
     def refuse(method, **p):
         raise BridgeError("no bridge")
-    assert Runner.hostiles_present(SimpleNamespace(bridge=SimpleNamespace(call=refuse))) is False
+    assert Runner.summary(SimpleNamespace(bridge=SimpleNamespace(call=refuse))) == {}
+
+
+# ---------------------------------------------------- a casualty lowers the floor
+# In one episode a colonist lay downed with 2.2 h to bleed out. No hostile was left, so the step was calm, and
+# a wake of 0.5 h was raised to 8 h. He died 3.2 h later with no step between.
+
+def _world_floor(summary, urgent=False):
+    from types import SimpleNamespace
+
+    from rimagent.runner import Runner
+
+    play = {"min_wake_hours": 8, "min_wake_hours_urgent": 0.5, "bleed_out_urgent_hours": 6}
+    r = SimpleNamespace(cfg={"play": play}, ctx=SimpleNamespace(extra={}),
+                        bridge=SimpleNamespace(call=lambda method, **p: summary if method == "state.summary" else {}))
+    r.summary = lambda: Runner.summary(r)
+    return Runner.world_floor(r, urgent)
+
+
+def test_hostiles_on_the_map_take_the_urgent_floor():
+    assert _world_floor({"hostiles": [{"id": "h1"}]}) == 0.5
+
+
+def test_a_calm_summary_keeps_the_calm_floor():
+    assert _world_floor({"hostiles": [], "downed": 0}) == 8
+
+
+def test_a_downed_colonist_takes_the_urgent_floor():
+    assert _world_floor({"hostiles": [], "downed": 1}) == 0.5
+
+
+def test_a_colonist_bleeding_out_soon_takes_the_urgent_floor():
+    assert _world_floor({"downed": 0, "bleed_out_hours": 2.2}) == 0.5
+
+
+def test_a_slow_bleed_keeps_the_calm_floor():
+    assert _world_floor({"downed": 0, "bleed_out_hours": 20}) == 8
