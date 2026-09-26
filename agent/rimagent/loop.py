@@ -221,6 +221,20 @@ def _hours_ago(h: Any) -> str:
     return f"{h:.0f}h ago" if h >= 10 else f"{h:.1f}h ago".replace(".0h", "h")
 
 
+def suspension_text(row: dict[str, Any]) -> str:
+    """` 158h ago by you: "reason"` for a suspended job; empty when the mod does not report the suspension (older mod)."""
+    text = ""
+    if row.get("suspended_hours_ago") is not None:
+        text += " " + _hours_ago(row["suspended_hours_ago"])
+    by = row.get("suspended_by")
+    if by:
+        text += " by you" if by == "director" else f" by the {by}"
+    reason = str(row.get("suspend_reason") or "").strip()
+    if reason:
+        text += f': "{reason[:200]}"'
+    return text
+
+
 def steward_stock_line(row: dict[str, Any]) -> str:
     """One stock job as a line: `wood 420/500 forestry ok (last run 2h ago)`; ✗ + the summary when short or stalled."""
     label = row.get("label") or row.get("kind") or "?"
@@ -235,7 +249,7 @@ def steward_stock_line(row: dict[str, Any]) -> str:
     if not row.get("enabled", True):
         state = "off"
     elif row.get("suspended"):
-        state = "suspended"
+        state = "suspended" + suspension_text(row)
     elif row.get("managed") is False:
         state = "manual"
     elif stalled:

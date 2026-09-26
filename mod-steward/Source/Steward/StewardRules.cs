@@ -83,6 +83,42 @@ namespace RimBridge.Steward
         public static bool ShouldReport(int day, int? lastReportedDay) => lastReportedDay == null || day > lastReportedDay.Value;
     }
 
+    /// <summary>When a stock job was suspended, by whom, and the reason given, reported back while it lasts.</summary>
+    public sealed class Suspension
+    {
+        public const string ByDirector = "director";
+        public const string BySteward = "steward";
+        public const int MaxReasonLength = 200;
+
+        /// <summary>Game tick of the suspend; -1 when not suspended or when suspended before this was recorded.</summary>
+        public int Tick = -1;
+        public string? By;
+        public string? Reason;
+
+        /// <summary>A new suspend records the tick and clears the old reason. A repeat keeps the tick. A resume clears everything.</summary>
+        public void Apply(bool wasSuspended, bool suspend, string by, string? reason, int tick)
+        {
+            if (!suspend)
+            {
+                Tick = -1;
+                By = null;
+                Reason = null;
+                return;
+            }
+            if (!wasSuspended)
+            {
+                Tick = tick;
+                Reason = null;
+            }
+            By = by;
+            if (!string.IsNullOrWhiteSpace(reason))
+            {
+                string r = reason!.Trim();
+                Reason = r.Length > MaxReasonLength ? r.Substring(0, MaxReasonLength) : r;
+            }
+        }
+    }
+
     /// <summary>
     /// Livestock arithmetic (pure): the colony's tame animals of one species are split into four buckets
     /// (adult/juvenile × male/female); targets are either a total [min, max] or a per-bucket [min, max]

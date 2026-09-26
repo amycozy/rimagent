@@ -70,5 +70,37 @@ namespace RimBridge.Tests
             Assert.Equal(new[] { "Warden" }, r.Keys);
             Assert.Equal(new[] { "Clawmont" }, r["Warden"]);
         }
+
+        [Fact]
+        public void Suspension_RecordsTickAndReason_ClearsOnResume()
+        {
+            var s = new Suspension();
+            s.Apply(wasSuspended: false, suspend: true, Suspension.ByDirector, " no valid animals, food fine (6.4d) ", tick: 1000);
+            Assert.Equal(1000, s.Tick);
+            Assert.Equal("director", s.By);
+            Assert.Equal("no valid animals, food fine (6.4d)", s.Reason);
+
+            // a repeat suspend keeps the first tick; a blank reason keeps the old one; a new reason replaces it
+            s.Apply(true, true, Suspension.ByDirector, "  ", 5000);
+            Assert.Equal(1000, s.Tick);
+            Assert.Equal("no valid animals, food fine (6.4d)", s.Reason);
+            s.Apply(true, true, Suspension.ByDirector, "still no animals", 6000);
+            Assert.Equal(1000, s.Tick);
+            Assert.Equal("still no animals", s.Reason);
+
+            s.Apply(true, false, Suspension.ByDirector, null, 7000);
+            Assert.Equal(-1, s.Tick);
+            Assert.Null(s.By);
+            Assert.Null(s.Reason);
+
+            // a fresh suspend does not inherit an old reason
+            s.Apply(false, true, Suspension.BySteward, null, 8000);
+            Assert.Equal(8000, s.Tick);
+            Assert.Equal("steward", s.By);
+            Assert.Null(s.Reason);
+
+            s.Apply(false, true, Suspension.ByDirector, new string('x', 500), 9000);
+            Assert.Equal(Suspension.MaxReasonLength, s.Reason!.Length);
+        }
     }
 }

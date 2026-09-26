@@ -65,7 +65,7 @@ namespace RimBridge.Steward
 
         // ───────────────────────────── status ─────────────────────────────
 
-        [Rpc("steward.status", "steward overview: {enabled: {scorer, stock}, posture: null|{label, expires_in_hours, work, weights, targets, work_disabled?}, pawns: [{id, name, managed, priorities: {WorkTypeDef: 1-4}, top: [{work, priority, why}]}], stock: [{id, kind, label, target, current, enabled, suspended, managed, last_run_hours_ago, designations (created by the job), adopted? (external designations counted toward the target, never removed by the job), failures, summary, notes}], problems: [string], orders: [{id, enabled, summary, acting_on}] (standing orders, see steward.orders), rally: [x,z,w,h]|null}")]
+        [Rpc("steward.status", "steward overview: {enabled: {scorer, stock}, posture: null|{label, expires_in_hours, work, weights, targets, work_disabled?}, pawns: [{id, name, managed, priorities: {WorkTypeDef: 1-4}, top: [{work, priority, why}]}], stock: [{id, kind, label, target, current, enabled, suspended, suspended_hours_ago?, suspended_by? (director|steward), suspend_reason?, managed, last_run_hours_ago, designations (created by the job), adopted? (external designations counted toward the target, never removed by the job), failures, summary, notes}], problems: [string], orders: [{id, enabled, summary, acting_on}] (standing orders, see steward.orders), rally: [x,z,w,h]|null}")]
         public static JToken Status(JObject p)
         {
             var map = Map();
@@ -196,6 +196,13 @@ namespace RimBridge.Steward
                 ["summary"] = job.LastRunSummary != null ? (JToken)job.LastRunSummary : JValue.CreateNull(),
                 ["notes"] = new JArray(job.Notes.Reverse().Take(full ? 20 : 3)),
             };
+            if (job.Suspended)
+            {
+                var s = job.Suspension;
+                o["suspended_hours_ago"] = s.Tick >= 0 ? (JToken)Math.Round((tick - s.Tick) / TicksPerHour, 1) : JValue.CreateNull();
+                o["suspended_by"] = s.By != null ? (JToken)s.By : JValue.CreateNull();
+                o["suspend_reason"] = s.Reason != null ? (JToken)s.Reason : JValue.CreateNull();
+            }
             if (job.AdoptedDesignations.Count > 0) o["adopted"] = job.AdoptedDesignations.Count;
             if (job.Trigger.TargetCount != job.EffectiveTarget) o["base_target"] = job.Trigger.TargetCount;
             if (StewardLedger.IsStalled(job)) o["stalled"] = true;
@@ -534,7 +541,7 @@ namespace RimBridge.Steward
         [Rpc("steward.stock.list", "stock jobs in full: status rows plus allowed: [defName], available: [defName], counted: [ThingDef], auto_scaled, interval_hours, check_reachable, settings (per kind: area, invert_area, allow_saplings | force_fully_mature | resource, unforbid_corpses, hunt_predators | haul_chunks, deconstruct_buildings, mine_thick_roofs | recipe, table, bill | livestock: species, min, max, tame, slaughter, area, train, buckets, counts, wild_on_map, pending_tame, pending_slaughter)")]
         public static JToken StockList(JObject p) => StockRows(Map(), true);
 
-        [Rpc("steward.stock.set", "{id|kind, target?: int, suspended?: bool, managed?: bool, allow?: [defName|label], disallow?: [...], allow_all?: bool, disallow_all?: bool, area?: label|null, max_radius?: int (global; 0 = no distance cap, the whole map is fair game — the default), hunt_predators?: bool (global), check_reachable?: bool, label?, interval_hours?: float, table?: thing id (production), min?/max?/tame?/slaughter?/train?: [TrainableDef]/buckets?: {adult_male: {min,max}..}|null (livestock; allow/disallow edit train)} edit a stock job -> full job row")]
+        [Rpc("steward.stock.set", "{id|kind, target?: int, suspended?: bool, reason?: string (why you suspend; kept with the suspension and shown in steward.status until it is lifted), managed?: bool, allow?: [defName|label], disallow?: [...], allow_all?: bool, disallow_all?: bool, area?: label|null, max_radius?: int (global; 0 = no distance cap, the whole map is fair game — the default), hunt_predators?: bool (global), check_reachable?: bool, label?, interval_hours?: float, table?: thing id (production), min?/max?/tame?/slaughter?/train?: [TrainableDef]/buckets?: {adult_male: {min,max}..}|null (livestock; allow/disallow edit train)} edit a stock job -> full job row")]
         public static JToken StockSet(JObject p)
         {
             var map = Map();
@@ -551,12 +558,15 @@ namespace RimBridge.Steward
                 if (target < 0) throw new RpcError("target must be >= 0");
                 SetTarget(job, target);
             }
-            if (Has(p, "suspended"))
+            string? reason = P.OptStr(p, "reason");
+            if (Has(p, "suspended") || (reason != null && job.Suspended))
             {
-                bool s = P.Bool(p, "suspended", false);
+                bool s = P.Bool(p, "suspended", job.Suspended);
                 if (job.Suspended && !s) job.ConsecutiveFailures = 0;
+                job.Suspension.Apply(job.Suspended, s, Suspension.ByDirector, reason, Find.TickManager.TicksGame);
                 job.Suspended = s;
             }
+            if (reason != null && !job.Suspended) warnings.Add("reason is kept only while the job is suspended; ignored");
             if (Has(p, "managed")) job.Managed = P.Bool(p, "managed", true);
             if (Has(p, "check_reachable")) job.CheckReachable = P.Bool(p, "check_reachable", true);
             if (Has(p, "interval_hours"))
