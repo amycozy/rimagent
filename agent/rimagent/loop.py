@@ -157,6 +157,13 @@ def think(ctx: Context, user_message: str, situation_hint: str = "", *, max_call
         for tc in reply.tool_calls:
             name, args, cid = tc["name"], tc["arguments"], tc["id"]
             ctx.emit("tool_call", {"name": name, "args": args, "id": cid, "stream": st})
+            if res.calls >= max_calls and name not in end_tools:
+                # One reply can hold many calls. Each call needs a tool message, so a call not run gets one.
+                text = f"not run: this step has used its {max_calls} tool calls"
+                ctx.emit("tool_result", {"name": name, "id": cid, "ok": False, "text": text, "elapsed": 0, "stream": st})
+                res.transcript.append({"role": "tool", "name": name, "ok": False, "text": text})
+                messages.append({"role": "tool", "tool_call_id": cid, "content": text})
+                continue
             t1 = time.time()
             result, ok = ctx.registry.execute(ctx, name, args)
             res.calls += 1
