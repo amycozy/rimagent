@@ -17,7 +17,7 @@ LETTER = {"kind": "letter", "text": "Monitor lizard hunting Thunkalatha"}
 def _runner() -> SimpleNamespace:
     return SimpleNamespace(force_think=None, pending_alerts=[], cfg={"play": {"event_cooldown_hours": 3}},
                            wake_kinds={"letter"}, ctx=SimpleNamespace(wake=SimpleNamespace(on_kinds=[])),
-                           critical_kinds=set(), cooled_event=None, _game_paused_since=None,
+                           critical_kinds=set(), critical_events=set(), wake_event=None, cooled_event=None, _game_paused_since=None,
                            _last_step_end_tick=77055, next_wake_tick=97053,
                            game_alert_trigger=lambda tick: None)  # noqa: ARG005
 

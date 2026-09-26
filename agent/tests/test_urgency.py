@@ -48,6 +48,7 @@ class FakeRunner:
         self.critical_kinds = set(KINDS)
         self.critical_events = set(EVENTS)
         self.wake_event: dict[str, Any] | None = None
+        self.cooled_event: dict[str, Any] | None = None
         self.urgent_step = False
         self.ctx = Context(bridge=self.bridge, llm=None, registry=Registry(), config=self.cfg, emit=lambda k, d: None)  # type: ignore[arg-type]
 
