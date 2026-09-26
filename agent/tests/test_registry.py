@@ -416,3 +416,26 @@ def test_a_watcher_fixed_immediately_after_it_broke_is_picked_up():
     reg.reload_brain()
     assert "fixme.py" not in reg.watcher_errors
     assert reg.watchers["fixme"](None, []) == ["ok"]
+
+
+def test_run_python_error_keeps_stdout_and_trace():
+    from rimagent.bridge import BridgeError
+    from rimagent.tools import meta
+
+    class FakeBridge:
+        def call(self, method, **params):
+            raise BridgeError("hours must be exactly 24 characters, got 28")
+
+    class Ctx:
+        bridge = FakeBridge()
+
+    reg = Registry()
+    reg.add(meta.run_python)
+    meta.REPL_NS.clear()
+    code = 's = "A" * 28\nprint(len(s))\nrpc("ui.set_schedule", pawn="Thunder", hours=s)'
+    result, ok = reg.execute(Ctx(), "run_python", {"code": code})
+    meta.REPL_NS.clear()
+    assert ok is False
+    assert result["error"] == "BridgeError: hours must be exactly 24 characters, got 28"
+    assert result["stdout"] == "28\n"
+    assert '"<string>", line 3' in result["trace"]

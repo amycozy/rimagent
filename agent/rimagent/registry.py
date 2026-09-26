@@ -278,7 +278,9 @@ class Registry:
             return t.fn(ctx, **args), True
         except Exception as e:  # noqa: BLE001
             tb = traceback.format_exc(limit=4)
-            return {"error": f"{type(e).__name__}: {e}", "trace": tb[-1200:] if t.source == "brain" else None}, False
+            out = {"error": f"{type(e).__name__}: {e}", "trace": tb[-1200:] if t.source == "brain" else None}
+            out.update(getattr(e, "tool_extra", None) or {})
+            return out, False
 
 
 # Agent-side additions to bridge tool docs: what the steward already does, so the director does not undercut it.
