@@ -132,6 +132,26 @@ namespace RimBridge.Tests
             Assert.Equal("HerbalOrWorse", MedicalDefaults.For(CareKind.Slave));
         }
 
+        [Fact]
+        public void CorpseMoves_ListsFromToAndDistance()
+        {
+            var moves = new List<CorpseMove>
+            {
+                new CorpseMove { Id = "Corpse_Human1", FromX = 83, FromZ = 67, FromDist = 58, To = "dump", ToX = 143, ToZ = 134, ToDist = 0 },
+                new CorpseMove { Id = "Corpse_Human2", FromX = 10, FromZ = 12, FromDist = 3 },
+            };
+            Assert.Equal("Corpse_Human1 [83,67] (58 from home) -> dump [143,134] (0 from home); Corpse_Human2 [10,12] (3 from home) -> no storage found now",
+                CorpseMoves.Format(moves, "home"));
+        }
+
+        [Fact]
+        public void CorpseMoves_CapsTheList()
+        {
+            var moves = new List<CorpseMove>();
+            for (int i = 0; i < CorpseMoves.MaxListed + 3; i++) moves.Add(new CorpseMove { Id = "C" + i, To = "dump" });
+            Assert.EndsWith("; +3 more", CorpseMoves.Format(moves, "base centre"));
+        }
+
         // ── corpse routing ──
 
         static CorpseFacts Human(bool grave = false, bool stock = false, bool crem = false, bool rotten = false)
