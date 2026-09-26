@@ -46,6 +46,27 @@ namespace RimBridge.Steward
         }
     }
 
+    /// <summary>
+    /// Where a posture work delta cannot land. Game rule (1.6): <c>Pawn_WorkSettings.SetPriority</c> refuses a
+    /// nonzero priority on a disabled work type, and the scorer skips it, so a raise there changes nothing.
+    /// </summary>
+    public static class PostureReach
+    {
+        /// <summary>Each work type with a positive delta, mapped to the pawns that have it disabled. Types no pawn has disabled are left out.</summary>
+        public static SortedDictionary<string, List<string>> DisabledFor<T>(IDictionary<string, float> deltas, IEnumerable<T> pawns, Func<T, string> name, Func<T, string, bool> isDisabled)
+        {
+            var result = new SortedDictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            var list = new List<T>(pawns);
+            foreach (var kv in deltas)
+            {
+                if (kv.Value <= 0f) continue;
+                var hit = list.FindAll(x => isDisabled(x, kv.Key)).ConvertAll(x => name(x));
+                if (hit.Count > 0) result[kv.Key] = hit;
+            }
+            return result;
+        }
+    }
+
     /// <summary>When a stock job counts as stalled and how often that is reported (once per job per day).</summary>
     public static class StockStallRule
     {
