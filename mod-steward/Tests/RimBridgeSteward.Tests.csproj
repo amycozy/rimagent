@@ -27,6 +27,7 @@
     <Compile Include="../Source/Steward/Orders/PetRules.cs" />
     <Compile Include="../Source/Steward/Stock/BillKeep.cs" />
     <Compile Include="../Source/Steward/Orders/RescueText.cs" />
+    <Compile Include="../Source/Steward/Orders/CorpseText.cs" />
   </ItemGroup>
 
 </Project>
