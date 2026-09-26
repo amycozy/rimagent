@@ -21,7 +21,8 @@ namespace RimBridge.Steward.Orders
             "Every 120 ticks: fires in the home area are counted. If no colonist is on a BeatFire job the scorer is tilted toward " +
             "firefighting for one hour (posture \"firefight\": Firefighter +1, BasicWorker +0.5; merged into the director's posture " +
             "if one is active and reverted when the hour ends). Each fire cluster (8x8 cell bucket) is reported to the ledger once " +
-            "per 2500 ticks as fire {cells}. Nothing is drafted and no job is issued.";
+            "per 2500 ticks as fire {cells}. When the home area has no fire after it had some, one fire_out event is written. Nothing is " +
+            "drafted and no job is issued.";
         public override int IntervalTicks => 120;
         public override IReadOnlyList<string>? TouchScopes => Array.Empty<string>();
 
@@ -39,6 +40,7 @@ namespace RimBridge.Steward.Orders
             yield return "nobody fighting: no free colonist whose current job is BeatFire";
             yield return $"action: posture '{PostureLabel}' for 1 hour (Firefighter +1.0, BasicWorker +0.5); an active posture keeps its label and gets the deltas merged, restored when the boost ends";
             yield return $"ledger: fire {{cells, at}} once per {FireClusters.BucketSize}x{FireClusters.BucketSize} bucket per {FireClusters.CooldownTicks} ticks";
+            yield return "ledger: fire_out once when the home area has no fire after it had some; a fire after that is reported again at once";
             var g = StewardGame.Current;
             if (g != null && g.fireBoostUntil >= 0) yield return $"boost active until tick {g.fireBoostUntil} (posture '{g.fireBoostPosture}', owned: {g.fireBoostOwnsPosture})";
         }
@@ -55,7 +57,17 @@ namespace RimBridge.Steward.Orders
             if (home != null && home.TrueCount > 0)
                 foreach (var f in map.listerThings.ThingsOfDef(ThingDefOf.Fire))
                     if (f.Spawned && home[f.Position]) fires.Add(f);
-            if (fires.Count == 0) return OrderReport.Idle("no fire in the home area");
+            if (fires.Count == 0)
+            {
+                if (g.fireBurning)
+                {
+                    g.fireBurning = false;
+                    g.fireSeen.Clear();
+                    StewardLedger.Orders("fire_out", "no fire in the home area", new JObject());
+                }
+                return OrderReport.Idle("no fire in the home area");
+            }
+            g.fireBurning = true;
 
             var report = new OrderReport();
             foreach (var f in fires) report.Act(f.ThingID);
