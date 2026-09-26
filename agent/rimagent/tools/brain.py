@@ -163,15 +163,24 @@ def notebook_read(ctx):
     return memory.notebook_read() or "(empty)"
 
 
-@tool("notebook_write", "Replace the colony notebook. Keep it under ~6000 chars: current plan, pawn roles, threats, open problems, what to check next.", {"text": "full markdown text"}, group="brain")
+@tool("notebook_write", f"Replace the colony notebook: current plan, pawn roles, threats, open problems, what to check next. The limit is {memory.NOTEBOOK_BUDGET} chars; a longer text is refused and the notebook stays as it was.", {"text": "full markdown text"}, group="brain")
 def notebook_write(ctx, text: str):
+    size = len(text.strip())
+    if size > memory.NOTEBOOK_BUDGET:
+        raise ValueError(f"notebook_write refused: the text is {size} chars and the limit is {memory.NOTEBOOK_BUDGET}. "
+                         f"Nothing was written; the notebook is {len(memory.notebook_read())} chars.")
     memory.notebook_write(text)
     ctx.emit("brain_change", {"kind": "notebook", "action": "write"})
     return f"notebook is now {len(text)} chars"
 
 
-@tool("notebook_append", "Append a short note to the colony notebook.", {"text": "note"}, group="brain")
+@tool("notebook_append", f"Append a short note to the colony notebook. The notebook limit is {memory.NOTEBOOK_BUDGET} chars; a note that takes it over the limit is refused.", {"text": "note"}, group="brain")
 def notebook_append(ctx, text: str):
+    cur = memory.notebook_read()
+    size = len((cur + "\n" + text.strip()).strip())
+    if size > memory.NOTEBOOK_BUDGET:
+        raise ValueError(f"notebook_append refused: the notebook would be {size} chars and the limit is {memory.NOTEBOOK_BUDGET}. "
+                         f"Nothing was written; the notebook is {len(cur)} chars.")
     memory.notebook_append(text)
     ctx.emit("brain_change", {"kind": "notebook", "action": "append"})
     return "appended"

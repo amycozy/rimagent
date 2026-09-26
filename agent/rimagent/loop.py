@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,6 +21,60 @@ MARK = '\n…(log clipped {n} chars; the model was given the full result)'
 def clip(text: str, limit: int = LOG_CLIP) -> str:
     """Shorten a tool result for the log, and say that is what happened."""
     return text if len(text) <= limit else text[:limit] + MARK.format(n=len(text) - limit)
+
+
+# The conversation bound, in chars: over BOUND_HIGH, old tool results and tool-call arguments are
+# shortened to ELIDE_AT chars, oldest first, until the total is under BOUND_LOW.
+BOUND_HIGH, BOUND_LOW, ELIDE_AT = 160_000, 120_000, 400
+CONTEXT_OVERFLOW = re.compile(r"context length|context_length|context window|prompt is too long", re.I)
+
+
+def _elide(text: str) -> str:
+    return text[:ELIDE_AT] + f"…(elided {len(text) - ELIDE_AT} chars)"
+
+
+def message_chars(m: dict[str, Any]) -> int:
+    """String content plus the arguments of each tool call."""
+    n = len(m["content"]) if isinstance(m.get("content"), str) else 0
+    return n + sum(len((tc.get("function") or {}).get("arguments") or "") for tc in m.get("tool_calls") or [])
+
+
+def _elide_arguments(tc: dict[str, Any]) -> None:
+    """Shorten each long argument value. The arguments stay a JSON object."""
+    fn = tc.get("function") or {}
+    raw = fn.get("arguments") or ""
+    if len(raw) <= ELIDE_AT:
+        return
+    try:
+        args = json.loads(raw)
+    except ValueError:
+        args = None
+    if not isinstance(args, dict):
+        fn["arguments"] = json.dumps({"_raw": _elide(raw)})
+        return
+    for k, v in args.items():
+        text = v if isinstance(v, str) else json.dumps(v)
+        if len(text) > ELIDE_AT:
+            args[k] = _elide(text)
+    fn["arguments"] = json.dumps(args)
+
+
+def bound_messages(messages: list[dict[str, Any]], high: int = BOUND_HIGH, low: int = BOUND_LOW) -> tuple[int, int]:
+    """Shorten the oldest long tool results and tool-call arguments, after the system and first user
+    message, until the total is under `low`. Does nothing at or under `high`. Returns (before, after) chars."""
+    before = total = sum(message_chars(m) for m in messages)
+    if total <= high:
+        return before, total
+    for m in messages[2:]:
+        if total < low:
+            break
+        size = message_chars(m)
+        if m.get("role") == "tool" and isinstance(m.get("content"), str) and len(m["content"]) > ELIDE_AT:
+            m["content"] = _elide(m["content"])
+        for tc in m.get("tool_calls") or []:
+            _elide_arguments(tc)
+        total -= size - message_chars(m)
+    return before, total
 
 
 DEFAULT_SYSTEM = """You are rimagent. You run this RimWorld colony by yourself through tools, and you improve your own skills, tools and reflexes between games. Nobody else will help.
@@ -148,6 +203,10 @@ def think(ctx: Context, user_message: str, situation_hint: str = "", *, max_call
                 break
             except Exception as e:  # noqa: BLE001
                 ctx.emit("error", {"text": f"LLM call failed (attempt {attempt + 1}): {e}"})
+                if CONTEXT_OVERFLOW.search(str(e)):
+                    # The same messages would fail the same way.
+                    before, after = bound_messages(messages, high=0, low=sum(message_chars(m) for m in messages) // 2)
+                    ctx.emit("log", {"text": f"context window exceeded: conversation shortened from {before} to {after} chars", "stream": st})
         if reply is None:
             res.notes = "LLM error: gave up after 2 attempts"
             break
@@ -211,15 +270,7 @@ def think(ctx: Context, user_message: str, situation_hint: str = "", *, max_call
             res.ended_by_tool = True
             res.notes = ctx.wake.notes
             break
-        # Keep the conversation bounded: if it grows huge, drop the oldest tool results' bodies.
-        total = sum(len(m.get("content") or "") if isinstance(m.get("content"), str) else 0 for m in messages)
-        if total > 160_000:
-            for m in messages[2:]:
-                if m.get("role") == "tool" and isinstance(m.get("content"), str) and len(m["content"]) > 400:
-                    m["content"] = m["content"][:400] + "…(elided)"
-                total = sum(len(m.get("content") or "") if isinstance(m.get("content"), str) else 0 for m in messages)
-                if total < 120_000:
-                    break
+        bound_messages(messages)
     res.elapsed = time.time() - t0
     ctx.emit("think_end", {"notes": res.notes, "wake": {"in_hours": ctx.wake.in_hours, "on_kinds": ctx.wake.on_kinds}, "calls": res.calls, "elapsed": round(res.elapsed, 1), "end_episode": ctx.end_episode_reason, "stream": st})
     return res
