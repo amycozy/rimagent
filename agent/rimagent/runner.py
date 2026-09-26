@@ -68,7 +68,7 @@ def is_critical(event: dict, critical_kinds: set[str], critical_events: set[str]
     return bool(ev) and ev in critical_events
 
 
-def wake_floor(play: dict, urgent: bool, model_speed=None) -> float:
+def wake_floor(play: dict, urgent: bool, model_speed=None, hostiles: bool = False) -> float:
     """The shortest wake the model is allowed to ask for.
 
     On an urgent step the floor was a fixed 0.5, so the finest cadence the model could REQUEST during a raid was
@@ -76,9 +76,13 @@ def wake_floor(play: dict, urgent: bool, model_speed=None) -> float:
     the model chose, and the shortest wake available to it would still have been too long. min_wake_hours_urgent
     makes it a setting; the default keeps 0.5.
 
+    `hostiles` is the other half. Urgency is a property of the step's trigger, and a fight outlives the step that
+    began it: a step that woke on a mood alert while a raid was running was calm, so a wake plan of half an hour
+    was raised to the calm floor of eight in-game hours. The world decides this one, not the trigger.
+
     This is a floor, not a schedule. Nothing wakes more often unless the model asks it to.
     """
-    if urgent or model_speed is not None:
+    if urgent or hostiles or model_speed is not None:
         return float(play.get("min_wake_hours_urgent", 0.5))
     return float(play.get("min_wake_hours", 3))
 
@@ -513,6 +517,13 @@ class Runner:
         except BridgeError:
             pass
 
+    def hostiles_present(self) -> bool:
+        """Whether a hostile is on the map right now, whatever this step woke on."""
+        try:
+            return bool((self.bridge.call("state.summary") or {}).get("hostiles"))
+        except BridgeError:
+            return False
+
     def with_pause(self, fn, urgent: bool = False) -> None:
         # Calm steps think at think_speed (default: full play speed); urgent ones at danger_think_speed (default: paused).
         play = self.cfg["play"]
@@ -559,7 +570,7 @@ class Runner:
         self.step_notes.append(res.notes)
         play = self.cfg["play"]
         hours = self.ctx.wake.in_hours if self.ctx.wake.in_hours else float(play.get("wake_hours", 8))
-        floor = wake_floor(play, self.urgent_step, self.ctx.extra.get("model_speed"))
+        floor = wake_floor(play, self.urgent_step, self.ctx.extra.get("model_speed"), self.hostiles_present())
         hours = max(floor, min(48.0, float(hours)))
         try:
             tick = int(self.bridge.status().get("tick", tick))
@@ -775,7 +786,7 @@ class Runner:
             self.ctx.end_episode_reason = end_reason
         play = self.cfg["play"]
         h = float(plan.get("wake_in_hours") or (min(hours) if hours else float(play.get("wake_hours", 8))))
-        h = max(float(play.get("min_wake_hours", 3)), min(48.0, h))
+        h = max(wake_floor(play, False, self.ctx.extra.get("model_speed"), self.hostiles_present()), min(48.0, h))
         try:
             tick = int(self.bridge.status().get("tick", tick))
         except BridgeError:

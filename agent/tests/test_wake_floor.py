@@ -34,3 +34,33 @@ def test_a_model_driven_speed_counts_as_urgent():
 def test_the_defaults_are_the_old_fixed_floors():
     assert wake_floor({}, urgent=True) == 0.5
     assert wake_floor({}, urgent=False) == 3
+
+
+# ---------------------------------------------------- the fight outlives the step that woke on it
+# Urgency is a property of the step's trigger; a raid is a property of the world. A step that woke on a mood
+# alert while a raider was carrying a colonist to the edge was calm, so a wake plan of half an hour was raised
+# to the calm floor of eight in-game hours.
+
+def test_hostiles_on_the_map_lower_the_floor_on_a_calm_step():
+    assert wake_floor(PLAY, urgent=False, hostiles=True) == 0.1
+
+
+def test_no_hostiles_and_a_calm_step_keeps_the_long_floor():
+    assert wake_floor(PLAY, urgent=False, hostiles=False) == 8
+
+
+def test_hostiles_present_reads_the_summary_and_survives_a_refusal():
+    from types import SimpleNamespace
+
+    from rimagent.bridge import BridgeError
+    from rimagent.runner import Runner
+
+    def bridge(summary):
+        return SimpleNamespace(call=lambda method, **p: summary if method == "state.summary" else {})
+
+    assert Runner.hostiles_present(SimpleNamespace(bridge=bridge({"hostiles": [{"id": "h1"}]}))) is True
+    assert Runner.hostiles_present(SimpleNamespace(bridge=bridge({}))) is False
+
+    def refuse(method, **p):
+        raise BridgeError("no bridge")
+    assert Runner.hostiles_present(SimpleNamespace(bridge=SimpleNamespace(call=refuse))) is False
