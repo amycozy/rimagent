@@ -26,6 +26,9 @@ play:
   improve_every_days: 3    # and then every N days
   wake_hours: 12           # scheduled think interval (in-game hours) when the model doesn't say
   min_wake_hours: 8        # floor for the model's own wake_in_hours (danger events/alerts bypass this)
+  min_wake_hours_urgent: 0.5   # the same floor on an urgent step. A kidnapping is decided in in-game minutes, so
+                               # lower it (e.g. 0.1 = 6 in-game minutes) to let the model ask to think that often.
+                               # A floor, not a schedule: nothing wakes more often unless the model asks it to.
   event_cooldown_hours: 3  # non-critical wake events are ignored this long after a step
   alert_wake_priorities: [Critical, High]   # game alerts that interrupt (plus any "idle colonist" alert); others wait for the next step.
                                              # High includes "medical treatment needed"/"colonist in mortal danger": waiting for Critical
