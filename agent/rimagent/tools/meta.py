@@ -72,6 +72,7 @@ def run_python(ctx, code: str):
     import io
     import json
     import math
+    import traceback
 
     from ..knowledge import source, wiki
 
@@ -93,8 +94,12 @@ def run_python(ctx, code: str):
     REPL_NS["ctx"] = ctx
     REPL_NS["result"] = None
     buf = io.StringIO()
-    with contextlib.redirect_stdout(buf):
-        exec(compiled, REPL_NS)  # noqa: S102, the agent owns this machine
+    try:
+        with contextlib.redirect_stdout(buf):
+            exec(compiled, REPL_NS)  # noqa: S102, the agent owns this machine
+    except Exception as e:
+        e.tool_extra = {"stdout": buf.getvalue()[-6000:], "trace": traceback.format_exc(limit=-3)[-1200:]}
+        raise
     out = buf.getvalue()
     res = REPL_NS.get("result")
     keys = [k for k, v in REPL_NS.items() if not k.startswith("_") and k not in ("ctx", "json", "math", "wiki", "source", "result", "rpc", "find", "summary", "base", "detail", "build") and not callable(v)]
