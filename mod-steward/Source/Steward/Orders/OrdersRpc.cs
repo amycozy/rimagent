@@ -28,7 +28,7 @@ namespace RimBridge.Steward.Orders
         {
             int tick = Find.TickManager?.TicksGame ?? 0;
             int last = StandingOrders.LastRunTick(o);
-            return new JObject
+            var row = new JObject
             {
                 ["id"] = o.Id,
                 ["label"] = o.Label,
@@ -38,20 +38,26 @@ namespace RimBridge.Steward.Orders
                 ["summary"] = StandingOrders.LastSummary(o) is { } s ? (JToken)s : JValue.CreateNull(),
                 ["acting_on"] = StandingOrders.ActingOn(o),
             };
+            if (StandingOrders.State(o) is { } st) row["state"] = st;
+            return row;
         }
 
-        /// <summary>[{id, enabled, summary, acting_on}] for steward.status.</summary>
+        /// <summary>[{id, enabled, summary, acting_on, state?}] for steward.status.</summary>
         public static JArray StatusRows()
         {
             var arr = new JArray();
             foreach (var o in StandingOrders.All)
-                arr.Add(new JObject
+            {
+                var row = new JObject
                 {
                     ["id"] = o.Id,
                     ["enabled"] = o.Enabled,
                     ["summary"] = StandingOrders.LastSummary(o) is { } s ? (JToken)s : JValue.CreateNull(),
                     ["acting_on"] = StandingOrders.ActingOn(o),
-                });
+                };
+                if (StandingOrders.State(o) is { } st) row["state"] = st;
+                arr.Add(row);
+            }
             return arr;
         }
 
@@ -65,7 +71,7 @@ namespace RimBridge.Steward.Orders
 
         public static JArray ActiveIds() => new JArray(StandingOrders.All.Where(o => o.Enabled).Select(o => o.Id));
 
-        [Rpc("steward.orders", "standing orders (deterministic reflexes in the mod): [{id: combat|rescue|fire|unforbid|corpses|beds|policies|blueprints|pets, label, enabled, interval_ticks, last_run_hours_ago, summary, acting_on: int}]")]
+        [Rpc("steward.orders", "standing orders (deterministic reflexes in the mod): [{id: combat|rescue|fire|unforbid|corpses|beds|policies|blueprints|pets, label, enabled, interval_ticks, last_run_hours_ago, summary, acting_on: int, state?: string (a condition that holds across passes: combat engaged or watching, sent even when acting_on is 0)}]")]
         public static JToken List(JObject p)
         {
             Map();
