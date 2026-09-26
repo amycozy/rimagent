@@ -459,6 +459,58 @@ namespace RimBridge.Steward.Orders
         }
     }
 
+    public enum ShotBlock { None, NoLine, OutOfRange, Apparel, Other }
+
+    /// <summary>One drafted ranged fighter against one engaged hostile, from where the fighter stands. Block None = can hit.</summary>
+    public struct ShotFacts
+    {
+        public int Fighter, Hostile;
+        public float Dist;
+        public ShotBlock Block;
+        public ShotFacts(int fighter, int hostile, float dist, ShotBlock block) { Fighter = fighter; Hostile = hostile; Dist = dist; Block = block; }
+    }
+
+    /// <summary>
+    /// The line-of-fire part of the "holding rally" status: how many ranged fighters can hit the hostile nearest the
+    /// rally, and how many can hit any engaged hostile, e.g. "0 of 2 ranged fighters can hit Shooter (8 cells, 2 no line)".
+    /// </summary>
+    public static class LineOfFireRules
+    {
+        public static string Text(int rangedFighters, IReadOnlyList<string> hostiles, int nearestHostile, IReadOnlyList<ShotFacts> shots)
+        {
+            if (hostiles.Count == 0 || nearestHostile < 0 || nearestHostile >= hostiles.Count) return "";
+            if (rangedFighters == 0) return "0 ranged fighters drafted";
+            var hitNearest = new HashSet<int>();
+            var hitAny = new HashSet<int>();
+            int noLine = 0, outOfRange = 0, apparel = 0, other = 0;
+            float closest = float.MaxValue;
+            foreach (var s in shots)
+            {
+                if (s.Block == ShotBlock.None) hitAny.Add(s.Fighter);
+                if (s.Hostile != nearestHostile) continue;
+                if (s.Dist < closest) closest = s.Dist;
+                switch (s.Block)
+                {
+                    case ShotBlock.None: hitNearest.Add(s.Fighter); break;
+                    case ShotBlock.NoLine: noLine++; break;
+                    case ShotBlock.OutOfRange: outOfRange++; break;
+                    case ShotBlock.Apparel: apparel++; break;
+                    default: other++; break;
+                }
+            }
+            var parts = new List<string>();
+            if (closest < float.MaxValue) parts.Add($"{closest:0} cells");
+            if (noLine > 0) parts.Add($"{noLine} no line");
+            if (outOfRange > 0) parts.Add($"{outOfRange} out of range");
+            if (apparel > 0) parts.Add($"{apparel} apparel blocks shot");
+            if (other > 0) parts.Add($"{other} other");
+            string text = $"{hitNearest.Count} of {rangedFighters} ranged fighters can hit {hostiles[nearestHostile]}"
+                + (parts.Count > 0 ? $" ({string.Join(", ", parts)})" : "");
+            if (hostiles.Count > 1) text += $"; {hitAny.Count} of {rangedFighters} can hit any of {hostiles.Count} engaged hostiles";
+            return text;
+        }
+    }
+
     /// <summary>Fire ledger dedupe: fires are bucketed into coarse cells, one ledger event per bucket per cooldown.</summary>
     public static class FireClusters
     {

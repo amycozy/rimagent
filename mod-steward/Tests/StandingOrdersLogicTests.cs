@@ -188,6 +188,35 @@ namespace RimBridge.Tests
         }
 
         [Fact]
+        public void LineOfFire_NoFighterCanHit_NamesDistanceAndReason()
+        {
+            var shots = new[] { new ShotFacts(0, 0, 9.4f, ShotBlock.NoLine), new ShotFacts(1, 0, 8.2f, ShotBlock.NoLine) };
+            Assert.Equal("0 of 2 ranged fighters can hit Shooter (8 cells, 2 no line)", LineOfFireRules.Text(2, new[] { "Shooter" }, 0, shots));
+        }
+
+        [Fact]
+        public void LineOfFire_SeveralHostiles_NearestNamedAndAnyCounted()
+        {
+            var shots = new[]
+            {
+                new ShotFacts(0, 0, 12f, ShotBlock.OutOfRange), new ShotFacts(0, 1, 20f, ShotBlock.None),
+                new ShotFacts(1, 0, 10f, ShotBlock.None), new ShotFacts(1, 1, 22f, ShotBlock.None),
+                new ShotFacts(2, 0, 11f, ShotBlock.NoLine), new ShotFacts(2, 1, 25f, ShotBlock.NoLine),
+            };
+            Assert.Equal("1 of 3 ranged fighters can hit Clubber (10 cells, 1 no line, 1 out of range); 2 of 3 can hit any of 2 engaged hostiles",
+                LineOfFireRules.Text(3, new[] { "Clubber", "Archer" }, 0, shots));
+        }
+
+        [Fact]
+        public void LineOfFire_EdgeCases()
+        {
+            Assert.Equal("0 ranged fighters drafted", LineOfFireRules.Text(0, new[] { "Shooter" }, 0, new ShotFacts[0]));
+            Assert.Equal("", LineOfFireRules.Text(2, new string[0], -1, new ShotFacts[0]));
+            Assert.Equal("2 of 2 ranged fighters can hit Shooter (5 cells)",
+                LineOfFireRules.Text(2, new[] { "Shooter" }, 0, new[] { new ShotFacts(0, 0, 5f, ShotBlock.None), new ShotFacts(1, 0, 7f, ShotBlock.None) }));
+        }
+
+        [Fact]
         public void ThreatRules_WatchVersusEngage()
         {
             Assert.True(ThreatRules.Engage(new HostileFacts { IsPawn = true, HasLord = true, Siege = true, InHome = true, DistToRally = 100 }));
