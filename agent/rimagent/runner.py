@@ -877,13 +877,14 @@ class Runner:
         assisted = bool(st.get("assisted", False)) or self.sandbox
         score = scorecard.score_from(days, colonists, self.deaths, float(summary.get("wealth", 0) or 0), float(summary.get("mood_avg", 0) or 0), int(summary.get("research_done", 0) or 0), self.raids)
         self.bus.emit("log", {"text": f"episode {self.episode} over: {reason}; days={days} colonists={colonists} deaths={self.deaths} score={score}"})
+        row = {"episode": self.episode, "seed": self.seed, "days": days, "colonists": colonists, "deaths": self.deaths, "raids": self.raids, "wealth": summary.get("wealth"), "mood": summary.get("mood_avg"), "research": summary.get("research_done"), "score": score, "assisted": assisted, "ended": reason}
         notes = ""
         try:
-            notes = reflect.episode(self.ctx, self.events, self.step_notes, reason, days, start_day=self.start_day)
+            notes = reflect.episode(self.ctx, self.events, self.step_notes, reason, days, start_day=self.start_day, row=row)
         except Exception as e:  # noqa: BLE001
             self.bus.emit("error", {"text": f"reflection failed: {e}"})
         sha = braingit.commit(f"episode {self.episode} ({self.seed}): {reason}; score {score}\n\n{notes[:800]}") or braingit.head()
-        scorecard.record({"episode": self.episode, "seed": self.seed, "days": days, "colonists": colonists, "deaths": self.deaths, "raids": self.raids, "wealth": summary.get("wealth"), "mood": summary.get("mood_avg"), "research": summary.get("research_done"), "score": score, "assisted": assisted, "brain_sha": sha, "ended": reason})
+        scorecard.record({**row, "brain_sha": sha})
         self.bus.emit("episode_end", {"episode": self.episode, "score": score, "reason": reason, "assisted": assisted, "brain_sha": sha, "days": days})
         self.ctx.end_episode_reason = None
         self.seed = ""
