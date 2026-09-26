@@ -404,6 +404,61 @@ namespace RimBridge.Steward.Orders
         public static bool ShouldHold(int lastHoldTick, int tick) => lastHoldTick < 0 || tick - lastHoldTick >= HoldTicks;
     }
 
+    public enum OverrunReason { None, RallyRadius, EnclosedRoom }
+
+    /// <summary>Where one engaged hostile stands, filled by the combat order from the live thing.</summary>
+    public sealed class OverrunFacts
+    {
+        public string Label = "";
+        public int X, Z;
+        public float DistToRally;
+        public bool ProperRoom;     // Room.ProperRoom: the room does not touch the map edge and is not only a doorway
+        public bool HomeUsable;
+        public bool InHome;
+        public string RoomLabel = "";
+    }
+
+    /// <summary>
+    /// A hostile overruns the base when it is within the rally radius, or inside an enclosed room of the base: a proper
+    /// room in the Home area, or any proper room when there is no Home area. Outdoor Home cells do not count.
+    /// </summary>
+    public static class OverrunRules
+    {
+        public static OverrunReason Reason(OverrunFacts f)
+        {
+            if (f.DistToRally <= CombatTimers.OverrunRadius) return OverrunReason.RallyRadius;
+            if (f.ProperRoom && (!f.HomeUsable || f.InHome)) return OverrunReason.EnclosedRoom;
+            return OverrunReason.None;
+        }
+
+        /// <summary>Index of the overrunning hostile nearest the rally centre; -1 when none overruns.</summary>
+        public static int Nearest(IReadOnlyList<OverrunFacts> hostiles)
+        {
+            int best = -1;
+            for (int i = 0; i < hostiles.Count; i++)
+            {
+                if (Reason(hostiles[i]) == OverrunReason.None) continue;
+                if (best < 0 || hostiles[i].DistToRally < hostiles[best].DistToRally) best = i;
+            }
+            return best;
+        }
+
+        /// <summary>The hostile that caused the overrun, e.g. "Raider at (120,85) inside room barracks (enclosed); +1 more".</summary>
+        public static string Why(IReadOnlyList<OverrunFacts> hostiles)
+        {
+            int i = Nearest(hostiles);
+            if (i < 0) return "";
+            var f = hostiles[i];
+            string where = Reason(f) == OverrunReason.RallyRadius
+                ? $"in rally radius ({f.DistToRally:0} cells)"
+                : $"inside room {(f.RoomLabel.Length > 0 ? f.RoomLabel : "?")} (enclosed)";
+            int more = 0;
+            foreach (var h in hostiles) if (Reason(h) != OverrunReason.None) more++;
+            more--;
+            return $"{f.Label} at ({f.X},{f.Z}) {where}" + (more > 0 ? $"; +{more} more" : "");
+        }
+    }
+
     /// <summary>Fire ledger dedupe: fires are bucketed into coarse cells, one ledger event per bucket per cooldown.</summary>
     public static class FireClusters
     {
