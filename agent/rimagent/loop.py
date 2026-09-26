@@ -71,6 +71,15 @@ def _fmt(template: str, **kw: str) -> str:
     return out
 
 
+def wake_text(play: dict[str, Any]) -> dict[str, str]:
+    """The prompt's wake facts, read from config so the prompt cannot drift from the runner."""
+    from .runner import wake_floor
+    floor = wake_floor(play, urgent=True)
+    speed = int(play.get("danger_think_speed", 0))
+    return {"urgent_wake_floor": f"{floor:g}", "urgent_wake_minutes": f"{floor * 60:g}",
+            "danger_think": "is paused" if speed == 0 else f"runs at speed {speed}"}
+
+
 def build_system(ctx: Context, situation_hint: str) -> str:
     all_skills = skills.load_all()
     always = [s for s in all_skills if s.always]
@@ -80,6 +89,7 @@ def build_system(ctx: Context, situation_hint: str) -> str:
     errs += [f"watcher {f}: {e.strip().splitlines()[-1]}" for f, e in ctx.registry.watcher_errors.items()]
     return _fmt(
         load_prompt("system", DEFAULT_SYSTEM),
+        **wake_text(ctx.config["play"]),
         skills_index=skills.index_text(all_skills),
         always_skills="\n\n".join(f"### {s.name}\n{s.body}" for s in always) or "(none)",
         selected_skills="\n\n".join(f"### {s.name}\n{s.body}" for s in selected) or "(none)",
