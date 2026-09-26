@@ -203,7 +203,7 @@ STEWARD_UNAVAILABLE = "steward: unavailable"
 _STEWARD_MAX_STOCK, _STEWARD_MAX_PROBLEMS, _STEWARD_MAX_PAWNS, _STEWARD_MAX_ORDER_LINES = 10, 5, 6, 8
 _STEWARD_TOOLS = "Director tools: rw_steward_stock_set (target/suspend/allow), rw_steward_posture (temporary bias with hours), rw_steward_pawn (managed=false takes a pawn manual), rw_steward_explain (why a priority), rw_steward_stock_run (run a job now), rw_steward_orders_set (toggle a standing order), rw_steward_orders_explain (what an order does, what it leaves alone)."
 # Standing orders (mod-side reflexes) in the canonical order the packet lists them; unknown ids from the mod are appended.
-ORDER_IDS = ("combat", "rescue", "unforbid", "corpses", "beds", "policies", "blueprints", "fire")
+ORDER_IDS = ("combat", "rescue", "unforbid", "corpses", "beds", "policies", "blueprints", "fire", "pets")
 TICKS_PER_HOUR = 2500
 RALLY_MIN_COLONISTS = 3
 RALLY_REMINDER = "rally: none — set one with rw_steward_orders_rally (rect inside the walls, near the hospital) so the combat order has somewhere to hold"

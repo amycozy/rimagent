@@ -66,6 +66,7 @@ namespace RimBridge.Steward.Orders
             new Order_Beds(),
             new Order_Policies(),
             new Order_Blueprints(),
+            new Order_Pets(),
         };
 
         public static IReadOnlyList<Order> All => _orders;
@@ -258,6 +259,28 @@ namespace RimBridge.Steward
         }
     }
 
+    /// <summary>The pets order's state on one map (keyed by map.uniqueID in StewardGame.pets).</summary>
+    public sealed class PetState : PetShelterState, IExposable
+    {
+        private List<string>? _leftScribe;
+
+        public void ExposeData()
+        {
+            if (Scribe.mode == LoadSaveMode.Saving) _leftScribe = new List<string>(left);
+            Scribe_Values.Look(ref active, "active");
+            Scribe_Values.Look(ref lastThreatTick, "lastThreatTick", -1);
+            Scribe_Values.Look(ref noAreaReported, "noAreaReported");
+            Scribe_Collections.Look(ref prevArea, "prevArea", LookMode.Value, LookMode.Value);
+            Scribe_Collections.Look(ref _leftScribe, "left", LookMode.Value);
+            if (Scribe.mode == LoadSaveMode.PostLoadInit)
+            {
+                prevArea ??= new Dictionary<string, string>();
+                left = new HashSet<string>(_leftScribe ?? new List<string>());
+                _leftScribe = null;
+            }
+        }
+    }
+
     public partial class StewardGame
     {
         // enable overrides, per-order run records
@@ -297,6 +320,8 @@ namespace RimBridge.Steward
         // blueprints order
         public Dictionary<string, int> bpUnreachableSince = new Dictionary<string, int>();
         public int bpStaleReportedDay = -1;
+        // pets order: one state per map (map.uniqueID)
+        public Dictionary<int, PetState> pets = new Dictionary<int, PetState>();
 
         private Dictionary<string, string>? _ownedSetScribe;
         private Dictionary<string, int>? _ownedManualScribe;
@@ -331,12 +356,13 @@ namespace RimBridge.Steward
 
         public IEnumerable<KeyValuePair<int, CombatState>> CombatStates => combat;
 
-        /// <summary>Drops combat states of maps that no longer exist.</summary>
+        /// <summary>Drops combat and pets states of maps that no longer exist.</summary>
         public void PruneCombat()
         {
             if (Find.Maps == null) return;
             var alive = new HashSet<int>(Find.Maps.Select(m => m.uniqueID));
             foreach (var k in combat.Keys.Where(k => !alive.Contains(k)).ToList()) combat.Remove(k);
+            foreach (var k in pets.Keys.Where(k => !alive.Contains(k)).ToList()) pets.Remove(k);
         }
 
         internal void AdoptLegacyCombat(Map map)
@@ -348,6 +374,20 @@ namespace RimBridge.Steward
             _legacyCombat = null;
             StewardLog.Message($"orders: adopted the pass-1 combat state on map {map.uniqueID}");
         }
+
+        // ── pets state access ──
+
+        /// <summary>The pets state of this map (created on first use).</summary>
+        public PetState Pets(Map map)
+        {
+            int key = map?.uniqueID ?? -1;
+            if (!pets.TryGetValue(key, out var st)) pets[key] = st = new PetState();
+            return st;
+        }
+
+        public PetState? PetsOrNull(Map? map) => map != null && pets.TryGetValue(map.uniqueID, out var st) ? st : null;
+
+        public IEnumerable<KeyValuePair<int, PetState>> PetStates => pets;
 
         public bool HasRally(Map? map) => rallyW > 0 && rallyH > 0 && map != null && rallyMapId == map.uniqueID;
 
@@ -416,6 +456,7 @@ namespace RimBridge.Steward
             Scribe_Values.Look(ref cremateBillId, "cremateBillId");
             Scribe_Collections.Look(ref bpUnreachableSince, "bpUnreachableSince", LookMode.Value, LookMode.Value);
             Scribe_Values.Look(ref bpStaleReportedDay, "bpStaleReportedDay", -1);
+            Scribe_Collections.Look(ref pets, "petsByMap", LookMode.Value, LookMode.Deep);
 
             if (Scribe.mode == LoadSaveMode.PostLoadInit)
             {
@@ -451,6 +492,8 @@ namespace RimBridge.Steward
                 _ownedSetScribe = null; _ownedManualScribe = null;
                 foodPrevPolicy ??= new Dictionary<string, int>();
                 bpUnreachableSince ??= new Dictionary<string, int>();
+                pets ??= new Dictionary<int, PetState>();
+                foreach (var k in pets.Keys.Where(k => pets[k] == null).ToList()) pets.Remove(k);
             }
         }
     }
