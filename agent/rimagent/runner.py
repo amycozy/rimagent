@@ -46,6 +46,28 @@ TICKS_PER_HOUR = 2500
 TICKS_PER_DAY = 60000
 
 
+def is_critical(event: dict, critical_kinds: set[str], critical_events: set[str]) -> bool:
+    """Whether a ledger event may interrupt a think step.
+
+    Kind alone is too coarse. The steward emits every standing-order event under
+    kind "orders" -- rescue, corpses, fire, combat_engaged, combat_released --
+    and the runner discards "orders" wholesale so routine housekeeping does not
+    break a step. In episode 1 that also discarded combat_engaged, and a raid
+    ran start to finish inside one 149s inference: the cat died, a colonist was
+    wounded, the raider went down, and the model was never told until it was
+    over. So a second, finer set matches the sub-kind in data.event.
+    """
+    kind = event.get("kind")
+    if kind in critical_kinds:
+        return True
+    ev = (event.get("data") or {}).get("event")
+    if not ev:
+        # StewardLedger.Orders writes "<event> <detail>" into text too, so a row
+        # whose data payload did not survive is still classifiable.
+        ev = (event.get("text") or "").split(" ", 1)[0]
+    return bool(ev) and ev in critical_events
+
+
 class Controls:
     """What the dashboard can poke."""
 
@@ -174,7 +196,10 @@ class Runner:
         self._last_step_end_tick = 0
         self.critical_kinds = set(cfg["play"].get("critical_kinds", ["dialog", "danger", "manhunter", "hostile_group", "colonist_downed", "colonist_died", "mental_break", "building_lost"]))
         self.critical_kinds.discard("steward")   # steward ledger events (stock stalled/reached, posture expired) are ordinary wakes, never interrupts
-        self.critical_kinds.discard("orders")    # standing-order events (combat engaged/released, rescue, corpses, fire) too: the runner already wakes on danger
+        self.critical_kinds.discard("orders")    # standing-order events (rescue, corpses, fire) too: the runner already wakes on danger
+        # ...except the one order event that means shots are being fired right now. Kind "orders" stays
+        # non-interrupting; combat_engaged is matched on its sub-kind. See is_critical() and episode 1 day 5.
+        self.critical_events = set(cfg["play"].get("critical_events", ["combat_engaged"]))
 
     # ---------- lifecycle ----------
     def run(self) -> None:
@@ -377,7 +402,7 @@ class Runner:
             evs = self.poll_events()
         except BridgeError:
             return []
-        urgent = [f"{e.get('kind')}: {e.get('text', '')}" for e in evs if e.get('kind') in self.critical_kinds]
+        urgent = [f"{e.get('kind')}: {e.get('text', '')}" for e in evs if is_critical(e, self.critical_kinds, self.critical_events)]
         alerts = run_watchers(self.ctx, evs)
         urgent += [f"watcher {a.get('watcher')}: {a.get('text')}" for a in alerts if a.get("wake")]
         if urgent:
@@ -401,7 +426,7 @@ class Runner:
         kinds = self.wake_kinds | set(self.ctx.wake.on_kinds or [])
         for e in new_events:
             k = e.get("kind")
-            if k in self.critical_kinds or (k in kinds and not recently):
+            if is_critical(e, self.critical_kinds, self.critical_events) or (k in kinds and not recently):
                 return f"event: {k}: {e.get('text', '')}"
         alert = self.game_alert_trigger(tick)
         if alert:
