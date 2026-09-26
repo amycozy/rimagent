@@ -56,11 +56,17 @@ def reply_to_operator(ctx, text: str):
 REPL_NS: dict = {}
 
 
+def syntax_error_text(e: SyntaxError) -> str:
+    """The message, line number, offset and source line of a SyntaxError. A harness tool result has no trace."""
+    line = (e.text or "").rstrip()
+    return f"{e.msg} at line {e.lineno}, offset {e.offset}: {line}"
+
+
 def reset_repl() -> None:
     REPL_NS.clear()
 
 
-@tool("run_python", "Persistent Python REPL (variables survive between calls and steps within a game). Available: rpc(method, **params), find(**params)=map.find, summary(), base()=state.base, detail(**p)=map.detail, build(**p)=ui.build, ctx, json, math, wiki, source. print() output is returned; set `result` for a value. Use it to compute over bridge data and keep references (e.g. beds = find(def='Bed')['things']).", {"code": "python code"}, group="meta")
+@tool("run_python", "Persistent Python REPL (variables survive between calls and steps within a game). Available: rpc(method, **params), find(defName, **params)=map.find, summary(), base()=state.base, detail(**p)=map.detail, build(defName, **p)=ui.build, ctx, json, math, wiki, source. print() output is returned; set `result` for a value. Use it to compute over bridge data and keep references (e.g. beds = find(\"Bed\")['things']). `def` is a Python keyword, so `def=` is a SyntaxError: find and build take the defName as the first argument, find(\"Bed\"); rpc takes it as **{\"def\": ...}, rpc(\"defs.get\", **{\"def\": \"Bed\"}). A SyntaxError result gives the line number, the offset and the line.", {"code": "python code"}, group="meta")
 def run_python(ctx, code: str):
     import contextlib
     import io
@@ -69,6 +75,10 @@ def run_python(ctx, code: str):
 
     from ..knowledge import source, wiki
 
+    try:
+        compiled = compile(code, "<string>", "exec")
+    except SyntaxError as e:
+        raise SyntaxError(syntax_error_text(e)) from None
     if not REPL_NS:
         REPL_NS.update({"ctx": ctx, "json": json, "math": math, "wiki": wiki, "source": source, "result": None,
                         "rpc": lambda method, **p: ctx.bridge.call(method, **p),
@@ -84,7 +94,7 @@ def run_python(ctx, code: str):
     REPL_NS["result"] = None
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        exec(code, REPL_NS)  # noqa: S102, the agent owns this machine
+        exec(compiled, REPL_NS)  # noqa: S102, the agent owns this machine
     out = buf.getvalue()
     res = REPL_NS.get("result")
     keys = [k for k, v in REPL_NS.items() if not k.startswith("_") and k not in ("ctx", "json", "math", "wiki", "source", "result", "rpc", "find", "summary", "base", "detail", "build") and not callable(v)]
