@@ -50,6 +50,18 @@ def operator_read(max_chars: int = 6000) -> str:
     return text[-max_chars:]
 
 
+def operator_messages(since: float | None = None) -> list[str]:
+    """Operator messages, oldest first, as `- [YYYY-MM-DD HH:MM] text`.
+    `since` (epoch seconds) keeps the messages stamped in its minute or later."""
+    if not OPERATOR.exists():
+        return []
+    entries = ["- " + e.strip() for e in OPERATOR.read_text(encoding="utf-8").split("\n- ")[1:] if e.strip()]
+    if since is None:
+        return entries
+    floor = _dt.datetime.fromtimestamp(since).strftime("%Y-%m-%d %H:%M")
+    return [e for e in entries if e[3:19] >= floor]
+
+
 def operator_append(text: str) -> None:
     stamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     with OPERATOR.open("a", encoding="utf-8") as fh:

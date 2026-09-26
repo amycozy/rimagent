@@ -2,7 +2,7 @@ Episode reflection. The game ended after {days} days. Reason: {reason}
 
 This is the long reflection between games. The next game starts from the brain as you leave it now, so the only things that matter are edits to skills, tools, watchers and the journal. Colony-specific details die with this episode.
 
-## Tips from the human operator this run (make sure each one is reflected in a skill)
+## Messages from the human operator in this episode (make sure each tip is reflected in a skill)
 {operator}
 
 ## Timeline of the episode (condensed)

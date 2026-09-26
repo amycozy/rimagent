@@ -1,6 +1,7 @@
 """Reflection steps: mid-episode improvement and end-of-episode learning."""
 from __future__ import annotations
 
+import datetime as _dt
 import json
 from typing import Any
 
@@ -19,7 +20,7 @@ Your job now is to make the NEXT game go better. Do this concretely:
 5. If score_history shows the last brain change made things worse, consider brain_revert.
 Finish with end_turn(notes=<one-paragraph summary of what you changed and why>).
 
-## Tips from the human operator this run (make sure each one is reflected in a skill)
+## Messages from the human operator in this episode (make sure each tip is reflected in a skill)
 {operator}
 
 ## Timeline
@@ -91,6 +92,20 @@ def coverage(events: list[dict[str, Any]], start_day: int | None, end_day: int |
     return line
 
 
+def operator_this_episode() -> str:
+    """The operator messages sent after the previous episode was scored, and their count.
+    The runner scores an episode after its reflection, so the last score row is the previous episode."""
+    last = scorecard.history(1)
+    since = last[-1].get("t") if last else None
+    msgs = memory.operator_messages(since)
+    noun = "message" if len(msgs) == 1 else "messages"
+    if since is None:
+        head = f"{len(msgs)} {noun}. No earlier episode is scored."
+    else:
+        head = f"{len(msgs)} {noun} since the previous episode ended ({_dt.datetime.fromtimestamp(since):%Y-%m-%d %H:%M})."
+    return "\n".join([head, *msgs])
+
+
 def episode(ctx: Context, events: list[dict[str, Any]], step_notes: list[str], reason: str, days: int, start_day: int | None = None, row: dict[str, Any] | None = None) -> str:
     """`row` is this episode's score row. The runner records it after the reflection, with the brain commit."""
     prompt = _fmt(
@@ -99,7 +114,7 @@ def episode(ctx: Context, events: list[dict[str, Any]], step_notes: list[str], r
         days=str(days),
         coverage=coverage(events, start_day, None if start_day is None else start_day + days),
         timeline=compress_timeline(events, step_notes),
-        operator=memory.operator_read(3000) or "(none)",
+        operator=operator_this_episode(),
         notebook=memory.notebook_read() or "(empty)",
         journal=memory.journal_read(20) or "(empty)",
         scores=scorecard.history_text(12, pending=row),
