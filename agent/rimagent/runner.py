@@ -172,6 +172,8 @@ class Runner:
         self._alerts_at = 0.0
         self._seen_alerts: dict[str, int] = {}   # label -> tick last woken for it
         self._last_step_end_tick = 0
+        self.cooled_event: dict[str, Any] | None = None   # a wake event that came inside the cooldown; waits for it to end
+        self._game_paused_since: float | None = None      # wall clock when a pause the harness did not make was first seen
         self.critical_kinds = set(cfg["play"].get("critical_kinds", ["dialog", "danger", "manhunter", "hostile_group", "colonist_downed", "colonist_died", "mental_break", "building_lost"]))
         self.critical_kinds.discard("steward")   # steward ledger events (stock stalled/reached, posture expired) are ordinary wakes, never interrupts
         self.critical_kinds.discard("orders")    # standing-order events (combat engaged/released, rescue, corpses, fire) too: the runner already wakes on danger
@@ -334,8 +336,9 @@ class Runner:
             if self.controls.paused:
                 time.sleep(1)
                 continue
-            trigger = self.wake_trigger(tick, new_events)
+            trigger = self.wake_trigger(tick, new_events, self.game_paused_between_steps(st))
             if trigger:
+                self.cooled_event = None   # the step's packet carries every pending event
                 urgent = self.is_urgent(trigger)
                 if self.parallel and not urgent:
                     self.with_pause(lambda: self.play_step_parallel(trigger, tick), urgent=False)
@@ -388,7 +391,22 @@ class Runner:
                 pass
         return urgent
 
-    def wake_trigger(self, tick: int, new_events: list[dict[str, Any]]) -> str | None:
+    def game_paused_between_steps(self, st: dict[str, Any], grace: float = 3.0) -> bool:
+        """Whether the game has stayed paused for `grace` seconds between steps.
+
+        The harness does not pause the game between steps; the agent-paused case returns before this is read.
+        So a pause here came from the game (a letter auto-pauses it) or the operator's hand. The tick does not
+        advance while paused, so neither the cooldown nor the scheduled wake can end. In one episode the run sat
+        for 40 real minutes after a ThreatBig letter.
+        """
+        if not st.get("paused"):
+            self._game_paused_since = None
+            return False
+        if self._game_paused_since is None:
+            self._game_paused_since = time.time()
+        return time.time() - self._game_paused_since >= grace
+
+    def wake_trigger(self, tick: int, new_events: list[dict[str, Any]], game_paused: bool = False) -> str | None:
         if self.force_think:
             t, self.force_think = self.force_think, None
             return t
@@ -403,11 +421,19 @@ class Runner:
             k = e.get("kind")
             if k in self.critical_kinds or (k in kinds and not recently):
                 return f"event: {k}: {e.get('text', '')}"
+            if k in kinds and self.cooled_event is None:
+                self.cooled_event = e   # kept, not dropped: it wakes when the cooldown ends
+        held = self.cooled_event
+        if held is not None and (not recently or game_paused):
+            why = "game paused between steps; event held through the cooldown" if recently else "event held through the cooldown"
+            return f"{why}: {held.get('kind')}: {held.get('text', '')}"
         alert = self.game_alert_trigger(tick)
         if alert:
             return alert
         if tick >= self.next_wake_tick:
             return "scheduled check-in"
+        if game_paused:
+            return "game paused between steps"
         return None
 
     def game_alert_trigger(self, tick: int) -> str | None:
